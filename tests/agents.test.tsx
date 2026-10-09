@@ -377,12 +377,12 @@ describe('chat', () => {
 })
 
 describe('waiting on approval', () => {
-  // A session whose calls the mode puts to the person when `isAsked` says so,
-  // its Bash calls running until released; its pane's clock ticking.
-  async function asking($: Engine, on: On, isAsked: (agentId: string | undefined) => boolean = () => true) {
+  // A session whose Bash calls run until released, its pane's clock ticking.
+  async function asking($: Engine, on: On) {
     const clock = mock.clock(on)
     loops(on)
-    on('tool.check', (_$, e) => ({ decision: isAsked(e.agentId) ? ('ask' as const) : ('allow' as const) }))
+    // Beneath the plugins, the request goes on to the person's dialog.
+    on('classic.PermissionRequest', () => ({}))
     const releases: (() => void)[] = []
     on('tool.call', { tool: 'Bash' }, () => new Promise(resolve => releases.push(() => resolve({ result: {} }))))
     const stored = new Map<string, unknown>()
@@ -394,9 +394,9 @@ describe('waiting on approval', () => {
     on('store.keys', () => ({ value: [] }))
     on('session.id', () => ({ value: 'self-full' }))
     await startSession($, on)
-    // A session asks tool.check about each call as it runs; the kit's
-    // $.tool.call does not, so the test asks as the session would.
-    const check = (agentId: string, command: string) => $.tool.check(inAgent({ tool: 'Bash', input: { command } }, agentId))
+    // Claude Code about to ask the person about an agent's call, as a
+    // session raises it while the call waits.
+    const check = (agentId: string, command: string) => $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command }, agent_id: agentId })
 
     return { clock, stored, check, release: () => releases.forEach(release => release()) }
   }
@@ -420,12 +420,22 @@ describe('waiting on approval', () => {
     expect(await textOf(ui, 'agents-heading')).toBe('Agents  1 running')
   })
 
-  test('never marks a call the mode allows without asking', async ($, on) => {
-    const { clock, check, release } = await asking($, on, () => false)
+  // The directory's rule: a mod leaves every permission decision to the person.
+  test('hands a permission request on exactly as it came, for the person to answer', async ($, on) => {
+    mock.clock(on)
+    loops(on)
+    on('classic.PermissionRequest', () => ({ decision: { behavior: 'deny' as const, message: 'not now' } }))
+    await spawn($, 'a1', 'find loaders')
+
+    const answer = await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'git push' }, agent_id: 'a1' })
+    expect(answer).toEqual({ decision: { behavior: 'deny', message: 'not now' } })
+  })
+
+  test('never marks an agent whose call nobody is asked about', async ($, on) => {
+    const { clock, release } = await asking($, on)
     await spawn($, 'a1', 'find loaders')
     const ui = await mount($)
     const call = $.tool.call(inAgent({ tool: 'Bash', command: 'npm test' }, 'a1'))
-    await check('a1', 'npm test')
     await clock.advance(2_000)
 
     expect(await textOf(ui, 'agent-a1')).toBe('▸ ⠋ Explore find loaders <1m · 1 tool   ⎿ Bash · npm test')
@@ -434,13 +444,13 @@ describe('waiting on approval', () => {
   })
 
   test("short of room, keeps the approve line of a waiting agent while other agents' ⎿ lines go", async ($, on) => {
-    const { clock, check, release } = await asking($, on, agentId => agentId === 'a1')
+    const { clock, check, release } = await asking($, on)
     const calls = []
     for (const id of ['a1', 'a2', 'a3', 'a4']) {
       await spawn($, id, id)
       calls.push($.tool.call(inAgent({ tool: 'Bash', command: 'sleep 1' }, id)))
-      await check(id, 'sleep 1')
     }
+    await check('a1', 'sleep 1')
     await clock.advance(1_000)
 
     // 16 rows give the agents 5: the heading and four agents, and one more

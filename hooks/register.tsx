@@ -335,19 +335,20 @@ export const register: Register = on => {
     }
   })
 
-  // A subagent's call that is put to its person: its row waits from now until
-  // that call ends. Claude Code says when a call is put to the person, not
-  // when they answer, so an allowed call shows as waiting while it runs.
-  on('tool.check', async ($, e, next) => {
-    const verdict = await next(e)
-    const agentId = e.agentId
-    if (verdict.decision === 'ask' && agentId !== undefined) {
+  // Claude Code is about to ask the person about a subagent's call: that
+  // agent's row waits from now until the call ends. Claude Code says when it
+  // asks, not when the person answers, so an allowed call shows as waiting
+  // while it runs. The hook decides nothing: it hands the request on as it
+  // came, and leaves the answer to the person.
+  on('classic.PermissionRequest', async ($, e, next) => {
+    const agentId = e.agent_id
+    if (agentId !== undefined) {
       const since = await $.clock.now()
-      const tool = e.tool
+      const tool = e.tool_name
       await update($, agents, list => list.map(a => (a.agentId === agentId ? { ...a, asking: { tool, since } } : a)))
     }
 
-    return verdict
+    return next(e)
   })
 
   // The plan is the main loop's task list: TaskCreate and TaskUpdate, or
