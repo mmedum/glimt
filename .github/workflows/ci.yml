@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The version glimt is tested with; the mod API moves between releases.
+      - run: npm install --global @anthropic-ai/claude-code@2.1.294
+      - run: claude plugin validate --strict .
+      - run: claude plugin test .
+      # Loading the mod once writes the engine's API types into
+      # .claude-plugin/types/, which the type-check needs; it needs no sign-in.
+      - run: claude -p --plugin-dir . /glimt
+      - run: npx --yes -p typescript@7.0.2 tsc -p . --noEmit
