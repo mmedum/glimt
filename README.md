@@ -86,6 +86,14 @@ The plan comes from Claude's task list. Claude Code offers that list by default 
 
 It can't switch this terminal to another session: Claude Code offers mods no way to do that ([#100519](https://github.com/anthropics/claude-code/issues/100519)). In an attached background session, ← on an empty prompt returns to agent view.
 
+## Privacy
+
+glimt collects no data about you and sends nothing anywhere. It runs only on your machine, makes no network requests, and has no service or telemetry of its own. It writes no files.
+
+What it reads, it reads to draw the pane, as listed under [How it works](#how-it-works). What it keeps between sessions sits in Claude Code's plugin store on your machine: each session's running agents, with up to 400 characters of each agent's task, and names one session asks another to take. A session's entry is deleted when the session ends or stops running, an entry not refreshed for a minute is ignored, and a name is deleted once taken.
+
+An agent or a session you start from glimt, and a message you send with `m`, goes to Claude through Claude Code like anything you type yourself, under [Anthropic's privacy policy](https://www.anthropic.com/legal/privacy).
+
 ## Contributing
 
 Questions and bugs: [open an issue](https://github.com/mmedum/glimt/issues). For a pull request, open an issue first.

@@ -12,6 +12,7 @@
   "icon": "./.claude-plugin/icon.png",
   "documentationUrl": "https://github.com/mmedum/glimt#readme",
   "supportUrl": "https://github.com/mmedum/glimt/issues",
+  "privacyPolicyUrl": "https://github.com/mmedum/glimt#privacy",
   "keywords": ["claude-code", "mod", "pane", "agents", "subagents", "sessions", "tui"],
   "types": "./types/index.d.ts"
 }
