@@ -23,7 +23,10 @@ export type AgentState = 'running' | 'done' | 'failed' | 'stopped'
 // did; `stepId` is the plan step in progress when it started, which its own
 // tasks nest under; `task` is the prompt it was given; `tool` and `doing` say
 // what its running call is and what that call is on; `tokens` is the size of
-// its context: what its latest model request carried, and the reply.
+// its context: what its latest model request carried, and the reply;
+// `model` is what it runs on; `isBackground` says it runs in the background,
+// so it can be stopped from here; `asking` is a call of its put to the
+// person, the tool and since when, until that call ends.
 export type Agent = {
   id: string
   agentId?: string | undefined
@@ -42,6 +45,9 @@ export type Agent = {
   // How full its context window is, in percent: known for the main
   // conversation alone.
   percent?: number | undefined
+  model?: string | undefined
+  isBackground?: boolean | undefined
+  asking?: { tool: string; since: number } | undefined
 }
 
 // The main conversation's latest turn: when it started and ended, how it
@@ -88,11 +94,22 @@ export type SessionState = 'waiting' | 'working' | 'idle'
 export type Phase = { state: SessionState; since?: number | undefined; isUnseen: boolean }
 
 // A running agent of another session, as that session's glimt shares it
-// through the store every session on the machine reads.
-export type SharedAgent = { id: string; type: string; description: string; task: string; startedAt: number; tools: number; tool?: string | undefined }
+// through the store every session on the machine reads; `asking` is the tool
+// a call of its waits on its person to allow.
+export type SharedAgent = {
+  id: string
+  type: string
+  description: string
+  task: string
+  startedAt: number
+  tools: number
+  tool?: string | undefined
+  asking?: string | undefined
+}
 
-// What a session's glimt shares: when it last did, and its running agents.
-export type Shared = { at: number; agents: SharedAgent[] }
+// What a session's glimt shares: when it last did, its running agents, and
+// how far its plan has come.
+export type Shared = { at: number; agents: SharedAgent[]; plan?: { done: number; total: number } | undefined }
 
 // The form open at the top of the pane: a new agent, here or as a new
 // background session, or a new name for a session.
@@ -123,7 +140,9 @@ export type Activity = { kind: 'asked' | 'said' | 'call'; text: string }
 
 // The activity last read for what the pane is drilled into, oldest first, or
 // why it could not be read.
-export type Feed = { items: Activity[]; error?: string | undefined }
+// `model` is the one its latest reply came from, and `branch` the git branch
+// of the session's folder, where known.
+export type Feed = { items: Activity[]; error?: string | undefined; model?: string | undefined; branch?: string | undefined }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -148,7 +167,8 @@ declare module 'claude-code' {
       // Whether this session's requests offer Claude a task list; null
       // before the first. Once one does, it stays true.
       hasTaskList: boolean | null
-      // The session `x` asked to stop, waiting for y or n.
+      // What `x` asked to stop, waiting for y or n: a session by its id, or
+      // one of this session's agents as "agent:" and its id.
       stopping: string | null
       // This session's id, to leave it out of the list: the pane is about it.
       self: string | null

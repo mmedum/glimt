@@ -100,9 +100,14 @@ export function loops(on: On) {
   on('turn.complete', () => ({ text: '' }))
 }
 
-export type SpawnOptions = { type?: string; parent?: string; prompt?: string }
+export type SpawnOptions = { type?: string; parent?: string; prompt?: string; background?: boolean }
 
-export function spawn($: Engine, agentId: string, description: string, { type = 'Explore', parent, prompt = description }: SpawnOptions = {}) {
+export function spawn(
+  $: Engine,
+  agentId: string,
+  description: string,
+  { type = 'Explore', parent, prompt = description, background = false }: SpawnOptions = {},
+) {
   return $.agent.spawn({
     tool_use_id: `tu-${agentId}`,
     prompt,
@@ -111,7 +116,7 @@ export function spawn($: Engine, agentId: string, description: string, { type = 
     provider: { plugin: 'engine', tier: 'core' },
     parentModel: 'claude-opus-5-5',
     ...(parent === undefined ? {} : { parentAgentId: parent }),
-    background: false,
+    background,
     fork: false,
   })
 }

@@ -175,7 +175,9 @@ export function sessionSection(view: View, listing: Listing, room: number) {
           const phase = listing.phases[s.sessionId]
           const isUnseen = phase?.isUnseen === true
           const running = sharedOf(s).length
-          const tally = `${stateText(word, phase, view.at)}${running === 0 ? '' : ` · ${running} ${running === 1 ? 'agent' : 'agents'}`}`
+          const plan = listing.shared[s.sessionId]?.plan
+          const progress = plan === undefined ? '' : ` · ${plan.done}/${plan.total}`
+          const tally = `${stateText(word, phase, view.at)}${progress}${running === 0 ? '' : ` · ${running} ${running === 1 ? 'agent' : 'agents'}`}`
 
           return (
             <Box key={`session-${s.sessionId}`} flexDirection="column">
@@ -233,11 +235,13 @@ export function sessionSection(view: View, listing: Listing, room: number) {
   }
 }
 
-// Where a session runs, what kind it is and its id: "~/code · background · a1b2c3d4".
-export function placeOf(s: Session): string {
+// Where a session runs, on which git branch where known, what kind it is and
+// its id: "~/code on main · background · a1b2c3d4".
+export function placeOf(s: Session, branch?: string): string {
   const where = runtime.home !== '' && s.cwd.startsWith(runtime.home) ? `~${s.cwd.slice(runtime.home.length)}` : s.cwd
+  const on = branch === undefined ? '' : ` on ${branch}`
 
-  return `${where} · ${s.kind === 'background' ? 'background' : 'terminal'} · ${s.id ?? s.sessionId}`
+  return `${where}${on} · ${s.kind === 'background' ? 'background' : 'terminal'} · ${s.id ?? s.sessionId}`
 }
 
 export type RemoteState = { list: RemoteList | undefined; shared: SharedAgent[]; tasks: Record<string, string>; open: readonly string[] }
@@ -281,6 +285,7 @@ export function remoteSection(view: View, s: Session, state: RemoteState) {
       task,
       key: `toggle-remote-${sid}-${a.id}`,
       isActive: isRemoteActive(view, a, share),
+      mark: remoteMark(view, a, share),
       tally: remoteTally(view, a, share),
       branch: i === shown.length - 1 && older === 0 ? '  └─ ' : '  ├─ ',
     }
@@ -299,7 +304,7 @@ export function remoteSection(view: View, s: Session, state: RemoteState) {
               <Box flexGrow={1}>
                 <Text dimColor={!line.isActive}>
                   {' '}
-                  <Text color={line.isActive ? 'claude' : 'subtle'}>{line.isActive ? spin(view.at) : '○'}</Text>{' '}
+                  <Text color={line.mark.color}>{line.mark.mark}</Text>{' '}
                   <Text inverse={view.cursor === line.key}>
                     {fit(`${line.a.type} ${line.a.description}`, view.columns - 9 - cells(line.tally) - 1)}
                   </Text>
@@ -329,14 +334,30 @@ export function isRemoteActive(view: View, a: RemoteAgent, share: SharedAgent | 
   return share !== undefined || view.at - a.writtenAt <= ACTIVE_MS
 }
 
-// A running agent its glimt shares: its time and what it runs; any other,
-// when its transcript was last written.
+// Another session's agent: ◉ while its glimt says it waits on its person,
+// the spinner while it works, ○ once it is quiet.
+export function remoteMark(view: View, a: RemoteAgent, share: SharedAgent | undefined): { mark: string; color: string } {
+  if (share?.asking !== undefined) {
+    return { mark: '◉', color: 'warning' }
+  }
+
+  return isRemoteActive(view, a, share) ? { mark: spin(view.at), color: 'claude' } : { mark: '○', color: 'subtle' }
+}
+
+// A running agent its glimt shares: its time and what it runs, or the tool it
+// waits on its person to allow; any other, when its transcript was last
+// written.
 export function remoteTally(view: View, a: RemoteAgent, share: SharedAgent | undefined): string {
   if (share === undefined) {
     return `${minutes(view.at - a.writtenAt)} ago`
   }
 
-  const doing = share.tool === undefined ? `${share.tools} ${share.tools === 1 ? 'tool' : 'tools'}` : toolName(share.tool)
+  const doing =
+    share.asking !== undefined
+      ? `approve ${toolName(share.asking)}`
+      : share.tool === undefined
+        ? `${share.tools} ${share.tools === 1 ? 'tool' : 'tools'}`
+        : toolName(share.tool)
   return `${minutes(view.at - share.startedAt)} · ${doing}`
 }
 

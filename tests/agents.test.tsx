@@ -375,3 +375,178 @@ describe('chat', () => {
     expect((await closed.find({ type: 'Text' }))?.text).toBe('engine row')
   })
 })
+
+describe('waiting on approval', () => {
+  // A session whose calls the mode puts to the person when `isAsked` says so,
+  // its Bash calls running until released; its pane's clock ticking.
+  async function asking($: Engine, on: On, isAsked: (agentId: string | undefined) => boolean = () => true) {
+    const clock = mock.clock(on)
+    loops(on)
+    on('tool.check', (_$, e) => ({ decision: isAsked(e.agentId) ? ('ask' as const) : ('allow' as const) }))
+    const releases: (() => void)[] = []
+    on('tool.call', { tool: 'Bash' }, () => new Promise(resolve => releases.push(() => resolve({ result: {} }))))
+    const stored = new Map<string, unknown>()
+    on('store.set', (_$, e) => {
+      stored.set(e.key, e.value)
+      return { value: undefined }
+    })
+    on('store.get', () => ({ value: undefined }))
+    on('store.keys', () => ({ value: [] }))
+    on('session.id', () => ({ value: 'self-full' }))
+    await startSession($, on)
+    // A session asks tool.check about each call as it runs; the kit's
+    // $.tool.call does not, so the test asks as the session would.
+    const check = (agentId: string, command: string) => $.tool.check(inAgent({ tool: 'Bash', input: { command } }, agentId))
+
+    return { clock, stored, check, release: () => releases.forEach(release => release()) }
+  }
+
+  test('marks an agent waiting once a call of its has waited a second on its person, until the call ends', async ($, on) => {
+    const { clock, check, release } = await asking($, on)
+    await spawn($, 'a1', 'find loaders')
+    const ui = await mount($)
+    const call = $.tool.call(inAgent({ tool: 'Bash', command: 'npm test' }, 'a1'))
+    await check('a1', 'npm test')
+    await clock.advance(999)
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ⠏ Explore find loaders <1m · 1 tool   ⎿ Bash · npm test')
+
+    await clock.advance(1)
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ◉ Explore find loaders <1m · 1 tool   ⎿ approve Bash · npm test')
+    expect(await textOf(ui, 'agents-heading')).toBe('Agents  1 running · 1 waiting')
+
+    release()
+    await call
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ⠋ Explore find loaders <1m · 1 tool')
+    expect(await textOf(ui, 'agents-heading')).toBe('Agents  1 running')
+  })
+
+  test('never marks a call the mode allows without asking', async ($, on) => {
+    const { clock, check, release } = await asking($, on, () => false)
+    await spawn($, 'a1', 'find loaders')
+    const ui = await mount($)
+    const call = $.tool.call(inAgent({ tool: 'Bash', command: 'npm test' }, 'a1'))
+    await check('a1', 'npm test')
+    await clock.advance(2_000)
+
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ⠋ Explore find loaders <1m · 1 tool   ⎿ Bash · npm test')
+    release()
+    await call
+  })
+
+  test("short of room, keeps the approve line of a waiting agent while other agents' ⎿ lines go", async ($, on) => {
+    const { clock, check, release } = await asking($, on, agentId => agentId === 'a1')
+    const calls = []
+    for (const id of ['a1', 'a2', 'a3', 'a4']) {
+      await spawn($, id, id)
+      calls.push($.tool.call(inAgent({ tool: 'Bash', command: 'sleep 1' }, id)))
+      await check(id, 'sleep 1')
+    }
+    await clock.advance(1_000)
+
+    // 16 rows give the agents 5: the heading and four agents, and one more
+    // row for the line of the one that waits.
+    const tight = await mount($, { rows: 16 })
+    expect(await textOf(tight, 'agent-a1')).toBe('▸ ◉ Explore a1 <1m · 1 tool   ⎿ approve Bash · sleep 1')
+    expect(await textOf(tight, 'agent-a2')).toBe('▸ ⠋ Explore a2 <1m · 1 tool')
+    release()
+    await Promise.all(calls)
+  })
+
+  test("shares a waiting agent with the other sessions' glimts", async ($, on) => {
+    const { clock, stored, check, release } = await asking($, on)
+    await spawn($, 'a1', 'find loaders')
+    const call = $.tool.call(inAgent({ tool: 'Bash', command: 'npm test' }, 'a1'))
+    await check('a1', 'npm test')
+    await clock.advance(5_000)
+
+    expect(stored.get('agents:self-full')).toEqual({
+      at: 5_000,
+      agents: [
+        { id: 'a1', type: 'Explore', description: 'find loaders', task: 'find loaders', startedAt: 0, tools: 1, tool: 'Bash', asking: 'Bash' },
+      ],
+    })
+    release()
+    await call
+  })
+})
+
+describe('models', () => {
+  test('names a model as people say it, a dated id by its version, and leaves an id it does not know as it is', async ($, on) => {
+    mock.clock(on)
+    const models: Record<string, string> = { a1: 'claude-sonnet-4-20250514', a2: 'gateway-model-x' }
+    on('agent.spawn', (_$, e) => ({ model: models[e.tool_use_id.slice(3)] ?? '', agentId: e.tool_use_id.slice(3) }))
+    await spawn($, 'a1', 'one')
+    await spawn($, 'a2', 'two')
+    const ui = await mount($, { isFocused: true })
+    await ui.press({ key: 'key-down' })
+    await ui.press({ key: 'key-down' })
+
+    await ui.press({ key: 'key-into' })
+    expect(await textOf(ui, 'drill-title')).toBe('⠋ Explore one  <1m · 0 tools · Sonnet 4')
+    await ui.press({ key: 'key-back' })
+    await ui.press({ key: 'key-down' })
+    await ui.press({ key: 'key-into' })
+    expect(await textOf(ui, 'drill-title')).toBe('⠋ Explore two  <1m · 0 tools · gateway-model-x')
+  })
+})
+
+describe('stopping an agent', () => {
+  // The pane, focused, its cursor on a1, which runs in the background or
+  // not; TaskStop answers with `stop`.
+  type Stopped = { result: { message: string; task_id: string; task_type: string } }
+  const STOPPED: Stopped = { result: { message: 'Stopped', task_id: 'a1', task_type: 'local_agent' } }
+
+  async function onAgentRow($: Engine, on: On, background: boolean, stop: () => Stopped = () => STOPPED) {
+    mock.clock(on)
+    loops(on)
+    const stopped: string[] = []
+    const toasts: string[] = []
+    on('ui.toast', (_$, e) => {
+      toasts.push(e.text)
+      return { value: undefined }
+    })
+    on('tool.call', { tool: 'TaskStop' }, (_$, e) => {
+      stopped.push(e.task_id ?? '')
+      return stop()
+    })
+    await spawn($, 'a1', 'find loaders', { background })
+    const ui = await mount($, { isFocused: true })
+    await ui.press({ key: 'key-down' })
+    await ui.press({ key: 'key-down' })
+    const offersStop = async () => (await ui.findAll({ type: 'Button' })).some(button => button.key === 'key-stop')
+
+    return { ui, stopped, toasts, offersStop }
+  }
+
+  test('x asks before stopping a background agent: n keeps it, y stops it with TaskStop', async ($, on) => {
+    const { ui, stopped, offersStop } = await onAgentRow($, on, true)
+    expect(await offersStop()).toBe(true)
+
+    await ui.press({ key: 'key-stop' })
+    expect(await textOf(ui, 'stop-agent-a1')).toBe('Stop Explore find loaders?yesno')
+    await ui.press({ key: 'stop-no' })
+    expect(await ui.find({ key: 'stop-agent-a1' })).toBeUndefined()
+    expect(stopped).toEqual([])
+
+    await ui.press({ key: 'key-stop' })
+    await ui.press({ key: 'stop-yes' })
+    expect(stopped).toEqual(['a1'])
+  })
+
+  test('offers no x on an agent that runs in the foreground', async ($, on) => {
+    const { offersStop } = await onAgentRow($, on, false)
+
+    expect(await offersStop()).toBe(false)
+  })
+
+  test('passes on why an agent could not be stopped', async ($, on) => {
+    const { ui, toasts } = await onAgentRow($, on, true, () => {
+      throw new Error('No task found with ID a1')
+    })
+
+    await ui.press({ key: 'key-stop' })
+    await ui.press({ key: 'stop-yes' })
+    expect(toasts.length).toBe(1)
+    expect(toasts[0]?.startsWith('Could not stop Explore find loaders')).toBe(true)
+  })
+})

@@ -2,9 +2,9 @@
 // transcript, drawn alone in the pane with a field to write to it.
 
 import type { Activity, Agent, Feed, Opened, Phase, RemoteAgent, RemoteList, Session, SharedAgent } from '../types'
-import { AGENT_MARK, agentTally, runningMark } from './agents'
-import { isReachable, isRemoteActive, placeOf, remoteSection, remoteTally, sessionMark, stateText } from './sessions'
-import { cells, clip, describeCall, fit, fitStart, isRecord, spin, toolName, wrap } from './text'
+import { agentMark, agentTally, askingOf, callOf, isStoppable } from './agents'
+import { isReachable, placeOf, remoteMark, remoteSection, remoteTally, sessionMark, stateText } from './sessions'
+import { clip, describeCall, fit, fitStart, isRecord, modelName, toolName, wrap } from './text'
 import { heading, keyButton, keyWidth, wrappedRows } from './view'
 import type { View } from './view'
 
@@ -49,6 +49,32 @@ export function parseTranscript(text: string, isSubagent = false): Activity[] {
       return []
     })
   })
+}
+
+// The model the latest reply in a transcript's lines came from; in a
+// session's own transcript, a subagent's replies are left out.
+export function lastModel(text: string, isSubagent = false): string | undefined {
+  let model: string | undefined
+  for (const line of text.split('\n')) {
+    let entry: unknown
+    try {
+      entry = JSON.parse(line)
+    } catch {
+      continue
+    }
+    const message = isRecord(entry) ? entry.message : undefined
+    if (
+      isRecord(entry) &&
+      entry.type === 'assistant' &&
+      (isSubagent || entry.isSidechain !== true) &&
+      isRecord(message) &&
+      typeof message.model === 'string'
+    ) {
+      model = message.model
+    }
+  }
+
+  return model
 }
 
 export function isShownText(text: string): boolean {
@@ -123,26 +149,24 @@ export function drillSection(view: View, drill: Drill) {
   let title: { mark: string; color: string; name: string } | undefined
   let facts: string[] = []
   let taskText: string | undefined
+  // The model a reply came from, after the time: "4m · 3 tools · Haiku 5.5".
+  const withModel = (line: string, model: string | undefined) => (model === undefined ? line : `${line} · ${modelName(model)}`)
   if (into.kind === 'agent' && agent !== undefined) {
-    const { mark, color } = agent.state === 'running' ? runningMark(view.at) : AGENT_MARK[agent.state]
-    title = { mark, color, name: `${agent.type} ${agent.description}` }
-    facts = [agentTally(view, agent, true)]
-    if (agent.state === 'running' && agent.tool !== undefined) {
-      const tool = toolName(agent.tool)
-      const room = width - 2 - cells(tool) - 5
-      const on = agent.doing === undefined ? '' : /^[/~]/.test(agent.doing) ? fitStart(agent.doing, room) : fit(agent.doing, room)
-      facts.push(on === '' ? `⎿ ${tool}` : `⎿ ${tool} · ${on}`)
+    title = { ...agentMark(view, agent), name: `${agent.type} ${agent.description}` }
+    facts = [withModel(agentTally(view, agent, true), agent.model)]
+    const call = callOf(agent, askingOf(view, agent), width - 2)
+    if (call !== undefined) {
+      facts.push(call)
     }
     taskText = agent.task
   } else if (into.kind === 'session' && session !== undefined) {
     const { mark, color, word } = sessionMark(session, view.at)
     title = { mark, color, name: session.name }
-    facts = [stateText(word, drill.phase, view.at), fitStart(`⎿ ${placeOf(session)}`, width - 2)]
+    facts = [withModel(stateText(word, drill.phase, view.at), got?.model), fitStart(`⎿ ${placeOf(session, got?.branch)}`, width - 2)]
   } else if (into.kind === 'remote' && remoteAgent !== undefined) {
     const share = shared.find(one => one.id === remoteAgent.id)
-    const isActive = isRemoteActive(view, remoteAgent, share)
-    title = { mark: isActive ? spin(view.at) : '○', color: isActive ? 'claude' : 'subtle', name: `${remoteAgent.type} ${remoteAgent.description}` }
-    facts = [remoteTally(view, remoteAgent, share), fit(`⎿ in ${session?.name ?? 'another session'}`, width - 2)]
+    title = { ...remoteMark(view, remoteAgent, share), name: `${remoteAgent.type} ${remoteAgent.description}` }
+    facts = [withModel(remoteTally(view, remoteAgent, share), got?.model), fit(`⎿ in ${session?.name ?? 'another session'}`, width - 2)]
     taskText = drill.tasks[`${into.sessionId}:${remoteAgent.id}`] ?? share?.task
   }
   const task =
@@ -158,7 +182,14 @@ export function drillSection(view: View, drill: Drill) {
     into.kind === 'session' && session !== undefined
       ? remoteSection(view, session, { list: drill.remote, shared, tasks: drill.tasks, open: drill.open })
       : undefined
-  const isAsking = into.kind === 'session' && session !== undefined && asked === session.sessionId
+  // After x, what y would stop: the session, or the agent, the pane is in.
+  const stopping =
+    into.kind === 'session' && session !== undefined && asked === session.sessionId
+      ? { key: `stop-${session.sessionId}`, name: session.name }
+      : into.kind === 'agent' && agent !== undefined && asked === `agent:${agent.id}`
+        ? { key: `stop-agent-${agent.id}`, name: `${agent.type} ${agent.description}` }
+        : undefined
+  const isAsking = stopping !== undefined
 
   const canMessage =
     Input !== undefined &&
@@ -166,6 +197,7 @@ export function drillSection(view: View, drill: Drill) {
     (into.kind === 'session' || (into.kind === 'agent' && agent?.state === 'running' && agent.agentId !== undefined))
   const canWalk = crew !== undefined && crew.toggles.length > 0
   const canReach = into.kind === 'session' && session !== undefined && isReachable(session)
+  const canStopAgent = into.kind === 'agent' && agent !== undefined && isStoppable(agent)
   const canRename = into.kind === 'session' && session !== undefined && drill.isSharing
   // The keys, as the overview pairs them: j, k, l and o only where there are
   // agents to walk, h always; each with the cells it takes, to count the
@@ -204,6 +236,7 @@ export function drillSection(view: View, drill: Drill) {
               { width: keyWidth('stop'), node: keyButton(view, 'stop', 'x', 'stop', act.stop) },
             ]
           : []),
+        ...(canStopAgent ? [{ width: keyWidth('stop'), node: keyButton(view, 'stop', 'x', 'stop', act.stop) }] : []),
         { width: keyWidth('keys'), node: keyButton(view, 'help', 'i', 'keys', act.help) },
       ]
     : undefined
@@ -252,9 +285,9 @@ export function drillSection(view: View, drill: Drill) {
               {line}
             </Text>
           ))}
-          {isAsking && session !== undefined && (
-            <Box key={`stop-${session.sessionId}`} flexDirection="row" columnGap={2} paddingLeft={2}>
-              <Text color="warning">{fit(`Stop ${session.name}?`, width - 20)}</Text>
+          {stopping !== undefined && (
+            <Box key={stopping.key} flexDirection="row" columnGap={2} paddingLeft={2}>
+              <Text color="warning">{fit(`Stop ${stopping.name}?`, width - 20)}</Text>
               <Button key="stop-yes" plain hotkey="y" label="yes" onPress={() => act.answer(true)} />
               <Button key="stop-no" plain hotkey="n" label="no" onPress={() => act.answer(false)} />
             </Box>

@@ -32,7 +32,7 @@ The keys work while the pane holds the keyboard: open it with `/glimt`, click it
 | Key     | Does                                                                             |
 | ------- | -------------------------------------------------------------------------------- |
 | `j` `k` | move down and up (↓ ↑ and Tab work too)                                          |
-| `l`     | go into an agent or a session: its task and live activity                        |
+| `l`     | go into an agent or a session: its task, model, branch and live activity         |
 | `h`     | back out, one level at a time                                                    |
 | `o`     | open or close the row: a step's description, an agent's task, a session's agents |
 | `n`     | new agent here                                                                   |
@@ -41,13 +41,15 @@ The keys work while the pane holds the keyboard: open it with `/glimt`, click it
 | `c`     | clear this conversation, after asking                                            |
 | `m`     | write to the agent or session you are in                                         |
 | `a`     | copy a background session's `claude attach` command                              |
-| `x`     | stop a background session, after asking                                          |
+| `x`     | stop a background session or agent, after asking                                 |
 | `i`     | all keys                                                                         |
 | `q`     | close the pane, from the `i` list                                                |
 
 A spinner marks whatever is working right now: a running agent, a working session, the step in progress while Claude is on it. The rest keep still marks: `◉` waiting for you, `○` idle, `✓` done, `✗` failed, `■` stopped.
 
-A waiting session says what it wants: `approve` for a permission prompt, `answer` for a question. Each other session shows how long it has been in its state, counted from when glimt saw that state begin, and its name turns bold when it stops, until you open it.
+A waiting session says what it wants: `approve` for a permission prompt, `answer` for a question. Each other session shows how long it has been in its state, counted from when glimt saw that state begin, and its name turns bold when it stops, until you open it. Where another session runs glimt, its row also shows how far its plan has come, as in `3/7`.
+
+An agent with a call waiting for your approval shows `◉` and `approve` with the tool. Claude Code tells a mod when a call is put to you, not when you answer, so the mark stays until that call ends.
 
 ## How it works
 
@@ -62,15 +64,15 @@ Mods run with your permissions, so here is everything glimt touches. `claude plu
 
 **What it runs**
 
-- These programs, and no others: `claude agents --json`; `tail -c 131072 <transcript>` and `head -n 1 <agent transcript>` for the reads above; `claude --bg <task>`, in this session's folder, when you press `s` and type a task; `claude stop <id>` when you press `x` on a background session and answer `y`.
-- Two of Claude Code's task tools, which only read: `TaskList` once at session start, so a resumed session shows its plan, and `TaskGet` when you open a step, for its description.
+- These programs, and no others: `claude agents --json`; `tail -c 131072 <transcript>` and `head -n 1 <agent transcript>` for the reads above; `claude --bg <task>`, in this session's folder, when you press `s` and type a task; `claude stop <id>` when you press `x` on a background session and answer `y`; `git -C <folder> rev-parse --abbrev-ref HEAD` for a session you are inside, at most every 30 seconds, to show its branch.
+- Three of Claude Code's task tools: `TaskList` once at session start, so a resumed session shows its plan, and `TaskGet` when you open a step, for its description, which only read; and `TaskStop` when you press `x` on an agent that runs in the background and answer `y`, which stops that agent.
 - Two slash commands: `/rename <name>` when you rename this session with `r`, or when another session's glimt asks it to take a name; `/clear` when you press `c` and answer `y`.
 - A `general-purpose` agent when you press `n`. Its prompt is the task you type, and nothing else.
 
 **What it writes**
 
 - A message you type with `m`, as typed, to the agent or session you are inside, through Claude Code.
-- Claude Code's plugin store, which only glimt in the other sessions on this machine reads: this session's running agents (type, description, task, start time, the tool each runs and how many it has run) and names asked of other sessions.
+- Claude Code's plugin store, which only glimt in the other sessions on this machine reads: this session's running agents (type, description, task, start time, the tool each runs and how many it has run, and the tool one waits on you to allow), how far its plan has come, and names asked of other sessions.
 - When a background session starts waiting for you, one notification through `$.ui.notify`, Claude Code's own call (2.1.295), and your notification setting; a toast where your terminal shows none; nothing if you turned notifications off. A session in a terminal of its own notifies from there.
 - `claude attach <id>` to your clipboard when you press `a`.
 
@@ -80,7 +82,7 @@ Mods run with your permissions, so here is everything glimt touches. `claude plu
 - The chat, while the pane is open: task-list rows are left out, and a running agent's row is kept to one line.
 - `/glimt`, its own command, opens the pane.
 
-Its other hooks (tool calls, turns, agents, prompts, session start and end, focus) only read what passes, to keep the pane current, and pass it on unchanged.
+Its other hooks (tool calls, permission checks, turns, agents, prompts, session start and end, focus) only read what passes, to keep the pane current, and pass it on unchanged.
 
 The plan comes from Claude's task list. Claude Code offers that list by default only on some models, and on every model in background sessions (agent view, or `claude --bg`); see [task tool availability](https://code.claude.com/docs/en/tools-reference#task-tool-availability). To have it in a terminal session on other models, start Claude Code with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`. Without it, the plan says so and everything else works the same.
 
@@ -90,7 +92,7 @@ It can't switch this terminal to another session: Claude Code offers mods no way
 
 glimt collects no data about you and sends nothing anywhere. It runs only on your machine, makes no network requests, and has no service or telemetry of its own. It writes no files.
 
-What it reads, it reads to draw the pane, as listed under [How it works](#how-it-works). What it keeps between sessions sits in Claude Code's plugin store on your machine: each session's running agents, with up to 400 characters of each agent's task, and names one session asks another to take. A session's entry is deleted when the session ends or stops running, an entry not refreshed for a minute is ignored, and a name is deleted once taken.
+What it reads, it reads to draw the pane, as listed under [How it works](#how-it-works). What it keeps between sessions sits in Claude Code's plugin store on your machine: each session's running agents, with up to 400 characters of each agent's task and the tool one waits on you to allow, how far its plan has come, and names one session asks another to take. A session's entry is deleted when the session ends or stops running, an entry not refreshed for a minute is ignored, and a name is deleted once taken.
 
 An agent or a session you start from glimt, and a message you send with `m`, goes to Claude through Claude Code like anything you type yourself, under [Anthropic's privacy policy](https://www.anthropic.com/legal/privacy).
 

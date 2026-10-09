@@ -287,6 +287,31 @@ describe('sessions', () => {
     expect(tails(ran)).toEqual([['tail', '-c', '131072', moved]])
   })
 
+  test("going into a session shows its latest reply's model and its git branch, read again every 30 seconds", LONG_CLOCK, async ($, on) => {
+    // The session's own reply, then a subagent's on another model, which is not the session's.
+    const transcript = `${[
+      { type: 'assistant', message: { role: 'assistant', model: 'claude-opus-5-5', content: [{ type: 'text', text: 'Done.' }] } },
+      {
+        type: 'assistant',
+        isSidechain: true,
+        message: { role: 'assistant', model: 'claude-haiku-5-5', content: [{ type: 'text', text: 'Found it.' }] },
+      },
+    ]
+      .map(line => JSON.stringify(line))
+      .join('\n')}\n`
+    const { ran, clock } = await machine($, on, { transcript, files: [DOCS], branch: 'main' })
+    const gits = () => ran.filter(argv => argv[0] === 'git')
+    const ui = await onSession($, 3)
+
+    await ui.press({ key: 'key-into' })
+    expect(await textOf(ui, 'drill-title')).toBe('○ docs-site  idle · Opus 5.5  ⎿ ~/code/docs on main · terminal · 1879e383-full')
+    expect(gits()).toEqual([['git', '-C', '/home/demo/code/docs', 'rev-parse', '--abbrev-ref', 'HEAD']])
+    await clock.advance(28_000)
+    expect(gits().length).toBe(1)
+    await clock.advance(2_000)
+    expect(gits().length).toBe(2)
+  })
+
   test('says so when a session has no transcript', async ($, on) => {
     const { ran } = await machine($, on, { folders: ['-home-demo-repos'] })
     const ui = await onSession($, 3)

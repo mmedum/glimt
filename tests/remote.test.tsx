@@ -64,6 +64,18 @@ describe("other sessions' agents", () => {
     expect(await textOf(ui, 'remote-1879e383-full-b2')).toBe('  └─ ▸ ⠋ general-purpose review the diff 1m · 3 tools')
   })
 
+  test("marks another session's agent that its glimt says waits on its person, with the tool", async ($, on) => {
+    const share = {
+      at: 3_600_000,
+      agents: [{ id: 'b2', type: 'general-purpose', description: 'review the diff', task: '', startedAt: 3_540_000, tools: 3, asking: 'Bash' }],
+    }
+    await machine($, on, { ...AGENTS_MACHINE, stored: { 'agents:1879e383-full': share } })
+    const ui = await onSession($, 3)
+
+    await ui.press({ key: 'key-open' })
+    expect(await textOf(ui, 'remote-1879e383-full-b2')).toBe('  └─ ▸ ◉ general-purpose review the diff 1m · approve Bash')
+  })
+
   test('an opened session takes the rows the plan and agents leave, so no other session folds', async ($, on) => {
     const many = Array.from({ length: 8 }, (_, i) => ({ name: `agent-c${i}.jsonl`, mtimeMs: 3_000_000 + i * 60_000 }))
     await machine($, on, { transcript: TAIL, files: [DOCS], dirs: { [SUBAGENTS]: many } })

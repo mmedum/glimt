@@ -10,8 +10,9 @@ import type { View } from './view'
 export type Keys = Record<'down' | 'up' | 'into' | 'back' | 'open' | 'spawn' | 'help' | 'rename' | 'clear' | 'attach' | 'stop', () => void>
 
 // What the cursor is on allows: o on any row, c on this session, r on this
-// session or one whose glimt shares, a and x on a background session.
-export type KeyContext = { canOpen: boolean; canClear: boolean; canRename: boolean; canReach: boolean }
+// session or one whose glimt shares, a and x on a background session, x on
+// an agent of this session that runs in the background.
+export type KeyContext = { canOpen: boolean; canClear: boolean; canRename: boolean; canReach: boolean; canStop: boolean }
 
 // The keys while the pane holds the keyboard: moving, n, and i for the full
 // list always; the rest only where the cursor's row allows them, so the row
@@ -27,7 +28,7 @@ export function keySection(view: View, can: KeyContext, keys: Keys) {
     can.canRename && 'rename',
     can.canClear && 'clear',
     can.canReach && 'attach',
-    can.canReach && 'stop',
+    (can.canReach || can.canStop) && 'stop',
     'new',
     'keys',
   ].filter((label): label is string => label !== false)
@@ -48,7 +49,7 @@ export function keySection(view: View, can: KeyContext, keys: Keys) {
         {can.canRename && key('rename', 'r', 'rename', keys.rename)}
         {can.canClear && key('clear', 'c', 'clear', keys.clear)}
         {can.canReach && key('attach', 'a', 'attach', keys.attach)}
-        {can.canReach && key('stop', 'x', 'stop', keys.stop)}
+        {(can.canReach || can.canStop) && key('stop', 'x', 'stop', keys.stop)}
         {key('spawn', 'n', 'new', keys.spawn)}
         {key('help', 'i', 'keys', keys.help)}
       </Box>
@@ -67,7 +68,7 @@ export const KEY_LIST: readonly (readonly [string, string])[] = [
   ['c', 'clear this conversation'],
   ['m', 'write to the agent or session you are in'],
   ['a', "copy a background session's attach command"],
-  ['x', 'stop a background session'],
+  ['x', 'stop a background session or agent'],
 ]
 
 export type HelpActions = { spawn: () => void; session: () => void; close: () => void; back: () => void }

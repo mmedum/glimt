@@ -6,9 +6,9 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PromptOrigin, Register } from 'claude-code'
 import type { Activity, Agent, AgentState, Composer, Feed, Opened, Plan, RemoteAgent, RemoteList, Session, Shared, SharedAgent, Step } from '../types'
-import { agentSection, contextTokens, isTurnRunning, mainAgent } from './agents'
+import { ASK_SHOWN_MS, agentSection, contextTokens, isStoppable, isTurnRunning, mainAgent } from './agents'
 import type { Spawned } from './agents'
-import { FEED_KEPT, TAIL_BYTES, callLine, drillSection, isShownText, parseTranscript } from './drill'
+import { FEED_KEPT, TAIL_BYTES, callLine, drillSection, isShownText, lastModel, parseTranscript } from './drill'
 import { FORM_ROWS, composerSection, helpSection, keySection, selfSection } from './keys'
 import { applyUpdate, nowSection, parentFrom, planLines, planSection, planTitle, planUnits, rowCount } from './plan'
 import type { StepUpdate } from './plan'
@@ -80,6 +80,10 @@ const remoteTasks = atom({ plugin: 'glimt', key: 'remoteTasks' } as const, {})
 const help = atom({ plugin: 'glimt', key: 'help' } as const, false)
 
 const transcripts = new Map<string, string>()
+
+// Each folder's git branch as last read, and when: read again after BRANCH_MS.
+const BRANCH_MS = 30_000
+const branches = new Map<string, { branch: string | undefined; at: number }>()
 
 // Each subagent's type and description, by its meta file: they never change.
 const metas = new Map<string, { type: string; description: string }>()
@@ -235,7 +239,9 @@ export const register: Register = on => {
     if (agentId === undefined) {
       await update($, focus, f => (f === null ? f : { ...f, endedAt: at, outcome: state, tool: undefined, doing: undefined }))
     } else {
-      await update($, agents, list => list.map(a => (a.agentId === agentId ? { ...a, state, endedAt: at, tool: undefined, doing: undefined } : a)))
+      await update($, agents, list =>
+        list.map(a => (a.agentId === agentId ? { ...a, state, endedAt: at, tool: undefined, doing: undefined, asking: undefined } : a)),
+      )
       await readAgentFeed($, agentId).catch(() => undefined)
     }
     await update($, now, () => at)
@@ -258,6 +264,8 @@ export const register: Register = on => {
       type: e.subagentType,
       description: e.description,
       task: e.prompt,
+      model: started.model,
+      isBackground: e.background,
     })
 
     return started
@@ -276,6 +284,11 @@ export const register: Register = on => {
       } else {
         await update($, agents, list => list.map(a => (a.agentId === agentId ? { ...a, tokens } : a)))
       }
+    }
+    // A new request from an agent: any call of its put to its person is over.
+    if (e.agentId !== undefined) {
+      const agentId = e.agentId
+      await update($, agents, list => list.map(a => (a.agentId === agentId && a.asking !== undefined ? { ...a, asking: undefined } : a)))
     }
     if (e.agentId !== undefined) {
       await readAgentFeed($, e.agentId).catch(() => undefined)
@@ -307,9 +320,34 @@ export const register: Register = on => {
     try {
       return await next(e)
     } finally {
-      await update($, agents, list => list.map(a => (a.agentId === agentId && a.tool === tool ? { ...a, tool: undefined, doing: undefined } : a)))
+      await update($, agents, list =>
+        list.map(a =>
+          a.agentId !== agentId
+            ? a
+            : {
+                ...a,
+                ...(a.tool === tool ? { tool: undefined, doing: undefined } : {}),
+                ...(a.asking?.tool === tool ? { asking: undefined } : {}),
+              },
+        ),
+      )
       await readAgentFeed($, agentId).catch(() => undefined)
     }
+  })
+
+  // A subagent's call that is put to its person: its row waits from now until
+  // that call ends. Claude Code says when a call is put to the person, not
+  // when they answer, so an allowed call shows as waiting while it runs.
+  on('tool.check', async ($, e, next) => {
+    const verdict = await next(e)
+    const agentId = e.agentId
+    if (verdict.decision === 'ask' && agentId !== undefined) {
+      const since = await $.clock.now()
+      const tool = e.tool
+      await update($, agents, list => list.map(a => (a.agentId === agentId ? { ...a, asking: { tool, since } } : a)))
+    }
+
+    return verdict
   })
 
   // The plan is the main loop's task list: TaskCreate and TaskUpdate, or
@@ -425,6 +463,7 @@ export const register: Register = on => {
     const others = listed === null ? null : sortSessions(listed.filter(s => s.sessionId !== selfId))
     const sharedBy = await read($, shared)
     const pointed = others?.find(s => view.cursor === `toggle-session-${s.sessionId}`)
+    const pointedAgent = team.find(a => view.cursor === `toggle-agent-${a.id}`)
     const isOnSelf = view.cursor === 'toggle-self'
     const renameTarget = isOnSelf ? selfId : pointed !== undefined && sharedBy[pointed.sessionId] !== undefined ? pointed.sessionId : null
     const keys = e.props.isFocused
@@ -435,6 +474,7 @@ export const register: Register = on => {
             canClear: isOnSelf,
             canRename: renameTarget !== null,
             canReach: pointed !== undefined && isReachable(pointed),
+            canStop: pointedAgent !== undefined && isStoppable(pointedAgent),
           },
           {
             down: () => void move($, 1),
@@ -602,7 +642,10 @@ export const register: Register = on => {
               4 -
               footerRows,
           )
-    const crew = agentSection(view, mainAgent(request), team, open, shareOf(AGENT_SHARE) + spare)
+    const crew = agentSection(view, mainAgent(request), team, open, shareOf(AGENT_SHARE) + spare, {
+      asked: await read($, stopping),
+      answer: isYes => void answerStop($, isYes),
+    })
     const listing = sessionSection(
       view,
       {
@@ -847,11 +890,27 @@ async function agentFeed($: EngineInterface, id: string): Promise<Feed> {
 async function sessionFeed($: EngineInterface, sessionId: string): Promise<Feed> {
   const s = (await read($, sessions))?.find(one => one.sessionId === sessionId)
   const path = s === undefined ? null : await transcriptOf($, s)
-  if (path === null) {
+  if (s === undefined || path === null) {
     return { items: [], error: 'No transcript found for this session.' }
   }
 
-  return tailFeed($, path, false)
+  return { ...(await tailFeed($, path, false)), branch: await branchOf($, s.cwd) }
+}
+
+// The git branch a folder is on: undefined outside a repository and on a
+// detached HEAD.
+async function branchOf($: EngineInterface, cwd: string): Promise<string | undefined> {
+  const at = await $.clock.now()
+  const known = branches.get(cwd)
+  if (known !== undefined && at - known.at < BRANCH_MS) {
+    return known.branch
+  }
+
+  const ran = await $.process.run(['git', '-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], { timeoutMs: 5000 }).catch(() => undefined)
+  const name = ran?.exitCode === 0 ? ran.stdout.trim() : ''
+  const branch = name === '' || name === 'HEAD' ? undefined : name
+  branches.set(cwd, { branch, at })
+  return branch
 }
 
 // Another session's agent: the tail of its own transcript, less its task.
@@ -873,7 +932,7 @@ async function tailFeed($: EngineInterface, path: string, isSubagent: boolean): 
     return { items: [], error: firstLine(ran.stderr) ?? 'Could not read the transcript.' }
   }
 
-  return { items: parseTranscript(ran.stdout, isSubagent) }
+  return { items: parseTranscript(ran.stdout, isSubagent), model: lastModel(ran.stdout, isSubagent) }
 }
 
 // The subagents of the sessions opened in the list or drilled into: every
@@ -1125,9 +1184,10 @@ async function learnSelf($: EngineInterface) {
   await update($, self, () => id)
 }
 
-// Every POLL_MS: this session's running agents into the store for the other
-// sessions' glimts, when they changed or a heartbeat is due; and any name
-// another session's glimt asked this one to take.
+// Every POLL_MS: this session's running agents and how far its plan has come
+// into the store for the other sessions' glimts, when they changed or a
+// heartbeat is due; and any name another session's glimt asked this one to
+// take.
 async function share($: EngineInterface) {
   const id = await read($, self)
   if (id === null) {
@@ -1145,10 +1205,13 @@ async function share($: EngineInterface) {
       startedAt: a.startedAt,
       tools: a.tools,
       tool: a.tool,
+      asking: a.asking !== undefined && at - a.asking.since >= ASK_SHOWN_MS ? a.asking.tool : undefined,
     }))
-  const text = JSON.stringify(running)
+  const list = await read($, steps)
+  const progress = list.length === 0 ? undefined : { done: list.filter(step => step.status === 'completed').length, total: list.length }
+  const text = JSON.stringify({ running, progress })
   if (text !== runtime.lastShared || at - runtime.lastSharedAt >= HEARTBEAT_MS) {
-    await $.store.set(`agents:${id}`, { at, agents: running })
+    await $.store.set(`agents:${id}`, { at, agents: running, plan: progress })
     runtime.lastShared = text
     runtime.lastSharedAt = at
   }
@@ -1179,6 +1242,8 @@ async function recordAgent($: EngineInterface, spawned: Spawned) {
     state: 'running',
     startedAt: at,
     tools: 0,
+    model: spawned.model,
+    isBackground: spawned.isBackground,
   }
   await update($, agents, list => [...list.filter(a => a.id !== agent.id), agent].slice(-50))
   await update($, now, () => at)
@@ -1224,7 +1289,16 @@ async function spawnAgent($: EngineInterface, task: string, where: 'here' | 'ses
       return
     }
     // This plugin's own spawn passes no agent.spawn hook of its own.
-    await recordAgent($, { agentId: started.agentId, fallbackId: 'glimt', type: 'general-purpose', description, task: text })
+    // A plugin's spawn always runs in the background.
+    await recordAgent($, {
+      agentId: started.agentId,
+      fallbackId: 'glimt',
+      type: 'general-purpose',
+      description,
+      task: text,
+      model: started.model,
+      isBackground: true,
+    })
     return
   }
 
@@ -1274,19 +1348,44 @@ async function attachSession($: EngineInterface) {
   $.ui.toast(copied.isCopied ? `Copied: ${command}` : `Could not copy: ${command}`)
 }
 
-// x: asks before stopping a background session; y or n answers.
+// The agent of this session x acts on: the one drilled into, or the one the
+// cursor is on.
+async function targetAgent($: EngineInterface): Promise<Agent | undefined> {
+  const top = (await read($, opened)).at(-1)
+  const team = await read($, agents)
+  if (top !== undefined) {
+    return top.kind === 'agent' ? team.find(a => a.id === top.id) : undefined
+  }
+
+  const key = await read($, cursor)
+  return team.find(a => key === `toggle-agent-${a.id}`)
+}
+
+// x: asks before stopping a background session, or an agent of this session
+// that runs in the background; y or n answers.
 async function askStop($: EngineInterface) {
+  const a = await targetAgent($)
+  if (a !== undefined && isStoppable(a)) {
+    await update($, stopping, () => `agent:${a.id}`)
+    return
+  }
+
   const s = await targetSession($)
   if (s !== undefined && isReachable(s)) {
     await update($, stopping, () => s.sessionId)
   }
 }
 
-// y stops the session with `claude stop`, which keeps its conversation; n
-// keeps it running.
+// y stops the session with `claude stop`, which keeps its conversation, or
+// the agent with Claude Code's TaskStop; n keeps it running.
 async function answerStop($: EngineInterface, isYes: boolean) {
   const asked = await read($, stopping)
   await update($, stopping, () => null)
+  if (isYes && asked?.startsWith('agent:') === true) {
+    await stopAgent($, asked.slice('agent:'.length))
+    return
+  }
+
   const s = (await read($, sessions))?.find(one => one.sessionId === asked)
   if (!isYes || s?.id === undefined) {
     return
@@ -1296,6 +1395,21 @@ async function answerStop($: EngineInterface, isYes: boolean) {
   const why = firstLine(ran?.stderr) ?? 'claude stop did not run'
   $.ui.toast(ran?.exitCode === 0 ? `Stopped ${s.name}` : `Could not stop ${s.name}: ${why}`)
   await readSessions($, true)
+}
+
+// Stops a background agent of this session through Claude Code's TaskStop,
+// as the agent panel under the prompt does; the agent's turn then ends as
+// stopped.
+async function stopAgent($: EngineInterface, id: string) {
+  const a = (await read($, agents)).find(one => one.id === id)
+  if (a?.agentId === undefined) {
+    return
+  }
+
+  const name = `${a.type} ${a.description}`
+  const ran = await $.tool.call({ tool: 'TaskStop', task_id: a.agentId }).catch((error: unknown) => ({ deny: String(error) }))
+  const why = ran.deny ?? (ran.isError ? firstLine(ran.text) : undefined)
+  $.ui.toast(ran.deny === undefined && !ran.isError ? `Stopped ${name}` : `Could not stop ${name}${why === undefined ? '' : `: ${why}`}`)
 }
 
 // The message field of the agent or the session drilled into: sends, then

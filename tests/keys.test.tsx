@@ -197,7 +197,7 @@ describe('drill-in', () => {
     const { ui, highlighted } = await onAgent($, on)
 
     await ui.press({ key: 'key-into' })
-    expect(await textOf(ui, 'drill-title')).toBe('⠋ Explore find loaders  <1m · 0 tools')
+    expect(await textOf(ui, 'drill-title')).toBe('⠋ Explore find loaders  <1m · 0 tools · Haiku 5.5')
     expect(await textOf(ui, 'drill-task')).toBe('Task  Find where hooks are loaded.')
     // The task is not repeated as the first activity.
     expect(await textOf(ui, 'activity')).toBe('● Looking in the loader.  ⎿ Grep · register● Found it in hooks/load.ts.')
@@ -217,12 +217,12 @@ describe('drill-in', () => {
 
     const call = $.tool.call(inAgent({ tool: 'Bash', command: 'rg register hooks/' }, 'a1'))
     await ui.advance(0)
-    expect(await textOf(ui, 'drill-title')).toBe('⠋ Explore find loaders  <1m · 1 tool  ⎿ Bash · rg register hooks/')
+    expect(await textOf(ui, 'drill-title')).toBe('⠋ Explore find loaders  <1m · 1 tool · Haiku 5.5  ⎿ Bash · rg register hooks/')
 
     messages.push(said('The loader is in load.ts:42.'))
     release()
     await call
-    expect(await textOf(ui, 'drill-title')).toBe('⠋ Explore find loaders  <1m · 1 tool')
+    expect(await textOf(ui, 'drill-title')).toBe('⠋ Explore find loaders  <1m · 1 tool · Haiku 5.5')
     expect((await textOf(ui, 'activity'))?.endsWith('● The loader is in load.ts:42.')).toBe(true)
   })
 

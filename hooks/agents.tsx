@@ -24,6 +24,8 @@ export type Spawned = {
   type: string
   description: string
   task: string
+  model?: string | undefined
+  isBackground?: boolean | undefined
 }
 
 export function isTurnRunning(request: Focus | null): boolean {
@@ -60,6 +62,46 @@ export function contextTokens(usage: ModelUsage): number {
 // or stopped one a shape of its own, so each reads without its color.
 export function runningMark(at: number) {
   return { mark: spin(at), color: 'claude' }
+}
+
+// x stops an agent that runs in the background, as a plugin's own always
+// does; Claude Code stops no other kind from a plugin.
+export function isStoppable(agent: Agent): boolean {
+  return agent.state === 'running' && agent.isBackground === true && agent.agentId !== undefined
+}
+
+// A call put to the agent's person shows as waiting once it has waited this
+// long, so a call the mode decides at once never flashes.
+export const ASK_SHOWN_MS = 1000
+
+// The tool a running agent waits on its person to allow, once that has
+// lasted ASK_SHOWN_MS.
+export function askingOf(view: View, agent: Agent): string | undefined {
+  const asking = agent.state === 'running' ? agent.asking : undefined
+  return asking !== undefined && view.at - asking.since >= ASK_SHOWN_MS ? asking.tool : undefined
+}
+
+// An agent's mark: ◉ while it waits on its person, the spinner while it
+// runs, a still mark once it has finished.
+export function agentMark(view: View, agent: Agent): { mark: string; color: string } {
+  if (agent.state !== 'running') {
+    return AGENT_MARK[agent.state]
+  }
+
+  return askingOf(view, agent) === undefined ? runningMark(view.at) : { mark: '◉', color: 'warning' }
+}
+
+// What its running call is on, after ⎿, led by "approve" while that call
+// waits on its person: "approve Bash · npm test".
+export function callOf(agent: Agent, asking: string | undefined, room: number): string | undefined {
+  if (agent.state !== 'running' || agent.tool === undefined) {
+    return undefined
+  }
+
+  const tool = `${asking === undefined ? '' : 'approve '}${toolName(agent.tool)}`
+  const space = room - cells(tool) - 5
+  const on = agent.doing === undefined ? '' : /^[/~]/.test(agent.doing) ? fitStart(agent.doing, space) : fit(agent.doing, space)
+  return on === '' ? `⎿ ${tool}` : `⎿ ${tool} · ${on}`
 }
 
 export const AGENT_MARK: Record<Exclude<AgentState, 'running'>, { mark: string; color: string }> = {
@@ -141,12 +183,12 @@ export function agentLines(view: View, node: AgentNode, open: readonly string[],
   if (view.columns < NARROW) {
     lines.push(fit(tallyOf(view, node), width))
   }
-  // Short of room, the ⎿ lines go, so more running agents fit.
-  if (agent.state === 'running' && agent.tool !== undefined && !isTight) {
-    const tool = toolName(agent.tool)
-    const room = width - cells(tool) - 5
-    const on = agent.doing === undefined ? '' : /^[/~]/.test(agent.doing) ? fitStart(agent.doing, room) : fit(agent.doing, room)
-    lines.push(on === '' ? `⎿ ${tool}` : `⎿ ${tool} · ${on}`)
+  // Short of room, the ⎿ lines go, so more running agents fit; one that
+  // waits on its person keeps its line.
+  const asking = askingOf(view, agent)
+  const call = callOf(agent, asking, width)
+  if (call !== undefined && (!isTight || asking !== undefined)) {
+    lines.push(call)
   }
   const isOpen = !node.isMain && open.includes(`agent:${agent.id}`)
   const task = isOpen
@@ -202,13 +244,17 @@ export function nodeRows(view: View, node: AgentNode, open: readonly string[], i
 
 // The agents in `room` rows. Past the room, finished agents with nothing
 // under them go first, oldest first; then the rest are counted on one line.
-export function agentSection(view: View, main: Agent | undefined, team: Agent[], open: readonly string[], room: number) {
+// After x on an agent, the question whether to stop it, under its row.
+export type AgentStop = { asked: string | null; answer: (isYes: boolean) => void }
+
+export function agentSection(view: View, main: Agent | undefined, team: Agent[], open: readonly string[], room: number, stop: AgentStop) {
   const { Box, Button, Text } = view.ui
   const isNarrow = view.columns < NARROW
   let shown = shownAgents(team)
   let nodes = agentTree(main, shown)
   let isTight = false
-  const rowsOf = (all: AgentNode[]) => all.reduce((sum, node) => sum + nodeRows(view, node, open, isTight), 0)
+  const isAsked = (a: Agent) => stop.asked === `agent:${a.id}`
+  const rowsOf = (all: AgentNode[]) => all.reduce((sum, node) => sum + nodeRows(view, node, open, isTight) + (isAsked(node.agent) ? 1 : 0), 0)
   // The rows for `count` agents of the `total` on show: the heading takes
   // one, and once an agent is left out, so does "+N more".
   const total = nodes.length
@@ -239,13 +285,15 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
   }
   const hidden = total - kept.length
   const running = (main?.state === 'running' ? 1 : 0) + team.filter(a => a.state === 'running').length
+  const waiting = team.filter(a => askingOf(view, a) !== undefined).length
+  const count = [running > 0 ? `${running} running` : '', waiting > 0 ? `${waiting} waiting` : ''].filter(part => part !== '').join(' · ')
 
   return {
     rows: 1 + Math.max(1, rowsOf(kept) + (hidden > 0 ? 1 : 0)),
     toggles: kept.flatMap(node => (node.isMain ? [] : [{ key: `toggle-agent-${node.agent.id}`, target: `agent:${node.agent.id}` }])),
     node: (
       <Box flexDirection="column">
-        {heading(view, 'agents-heading', 'Agents', running === 0 ? '' : `${running} running`)}
+        {heading(view, 'agents-heading', 'Agents', count)}
         {kept.length === 0 && hidden === 0 && (
           <Box key="no-agents">
             <Text dimColor>No agents running.</Text>
@@ -255,7 +303,7 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
           const { agent: a, branch, isMain } = node
           const { under, status, task } = agentLines(view, node, open, isTight)
           const isRunning = a.state === 'running'
-          const { mark, color } = a.state === 'running' ? runningMark(view.at) : AGENT_MARK[a.state]
+          const { mark, color } = agentMark(view, a)
           const tally = tallyOf(view, node)
           const title = fit(`${a.type} ${a.description}`, view.columns - leadOf(node) - (isNarrow ? 0 : cells(tally) + 1))
           const type = title.startsWith(a.type) ? a.type : title
@@ -279,6 +327,13 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
                 </Box>
                 {!isNarrow && <Text dimColor> {tally}</Text>}
               </Box>
+              {isAsked(a) && (
+                <Box key={`stop-agent-${a.id}`} flexDirection="row" columnGap={2} paddingLeft={4}>
+                  <Text color="warning">{fit(`Stop ${a.type} ${a.description}?`, view.columns - 20)}</Text>
+                  <Button key="stop-yes" plain hotkey="y" label="yes" onPress={() => stop.answer(true)} />
+                  <Button key="stop-no" plain hotkey="n" label="no" onPress={() => stop.answer(false)} />
+                </Box>
+              )}
               {status.map(line => (
                 <Text dimColor>
                   {under}

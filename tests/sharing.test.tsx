@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { loops, mount, spawn, textOf } from './kit'
+import { create, loops, mount, setStatus, spawn, taskTools, textOf } from './kit'
 import { LISTED, machine, sessionOrder } from './machine'
 
 describe('sharing between sessions', () => {
@@ -21,6 +21,26 @@ describe('sharing between sessions', () => {
     expect(sharedAt()).toBe(3_605_000)
     await clock.advance(5_000)
     expect(sharedAt()).toBe(3_635_000)
+  })
+
+  test("shares how far this session's plan has come", async ($, on) => {
+    taskTools(on)
+    const { clock, store } = await machine($, on)
+    await create($, 'one')
+    await create($, 'two')
+    await create($, 'three')
+    await setStatus($, '1', 'completed')
+    await setStatus($, '2', 'in_progress')
+
+    await clock.advance(5_000)
+    expect(store.get('agents:self-full')).toEqual({ at: 3_605_000, agents: [], plan: { done: 1, total: 3 } })
+  })
+
+  test("shows how far another session's plan has come on its row", async ($, on) => {
+    await machine($, on, { stored: { 'agents:1879e383-full': { at: 3_600_000, agents: [], plan: { done: 2, total: 5 } } } })
+    const ui = await mount($)
+
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ docs-site idle · 2/5')
   })
 
   test('shows a share a minute old, and none older', async ($, on) => {

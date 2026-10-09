@@ -4,6 +4,13 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- An agent with a call waiting for your approval shows `◉` and `approve` with the tool, in this session and in other sessions running glimt.
+- `x` stops an agent of this session that runs in the background, after asking, through Claude Code's `TaskStop`.
+- Going into an agent or a session shows the model of its latest reply, and a session's git branch.
+- Another session's row shows how far its plan has come, where it runs glimt.
+
 ## [0.2.0] - 2026-10-09
 
 ### Added

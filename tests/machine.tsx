@@ -49,12 +49,15 @@ export type MachineOptions = {
   outputs?: Record<string, string>
   stored?: Record<string, unknown>
   selfId?: { current: string }
+  // The git branch every folder is on; none is a folder outside a repository.
+  branch?: string
 }
 
 // The machine beneath the plugin, an hour in: `claude agents --json` prints
 // `listed` (`relisted` once set, or `stdout` as given, or fails with
 // `stderr`), `claude stop`
-// stops (or fails with `stopError`), `head` and `tail` print a file's
+// stops (or fails with `stopError`), `git` prints `branch` (or fails, as
+// outside a repository), `head` and `tail` print a file's
 // `outputs` (else `transcript`), the files in `files` exist, Claude Code's
 // projects folder holds `folders`, each of `dirs` lists its files, `texts`
 // are the files read whole and the store holds `stored`; the home folder is
@@ -102,6 +105,15 @@ export async function machine($: Engine, on: On, options: MachineOptions = {}): 
   })
   on('process.run', (_$, e) => {
     seen.ran.push([...e.argv])
+    if (e.argv[0] === 'git') {
+      const { branch } = options
+      return {
+        value:
+          branch === undefined
+            ? { exitCode: 128, stdout: '', stderr: 'fatal: not a git repository', isStdoutTruncated: false, isStderrTruncated: false }
+            : { exitCode: 0, stdout: `${branch}\n`, stderr: '', isStdoutTruncated: false, isStderrTruncated: false },
+      }
+    }
     if (e.argv[0] === 'tail' || e.argv[0] === 'head') {
       const text = outputs[e.argv.at(-1) ?? ''] ?? transcript
       const printed = e.argv[0] === 'head' ? `${text.split('\n')[0] ?? ''}\n` : text

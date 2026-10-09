@@ -141,6 +141,17 @@ export function minutes(ms: number): string {
   return total < 60 ? `${total}m` : `${Math.floor(total / 60)}h${String(total % 60).padStart(2, '0')}m`
 }
 
+// A model id as people say it: "claude-haiku-5-5" is "Haiku 5.5"; any other
+// id stays as it is.
+export function modelName(id: string): string {
+  const [, family = '', major = '', minor] = /^claude-([a-z]+)-(\d{1,2})(?:-(\d{1,2}))?(?=-|$)/.exec(id) ?? []
+  if (family === '') {
+    return id
+  }
+
+  return `${family.charAt(0).toUpperCase()}${family.slice(1)} ${major}${minor === undefined ? '' : `.${minor}`}`
+}
+
 // mcp__server__tool reads as tool.
 export function toolName(tool: string): string {
   return tool.startsWith('mcp__') ? tool.split('__').slice(2).join('__') : tool
