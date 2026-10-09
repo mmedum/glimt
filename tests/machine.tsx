@@ -11,7 +11,15 @@ import type { Mounted } from './kit'
 // other of each state, in an order the pane sorts.
 export const LISTED = [
   { pid: 65767, cwd: '/home/demo/code/docs', kind: 'interactive', startedAt: 60_000, sessionId: '1879e383-full', name: 'docs-site', status: 'idle' },
-  { id: 'd3d04fc1', cwd: '/home/demo/code', kind: 'background', startedAt: 0, sessionId: 'd3d04fc1-full', name: 'release-notes', state: 'blocked' },
+  {
+    id: 'd3d04fc1',
+    cwd: '/home/demo/code/notes',
+    kind: 'background',
+    startedAt: 0,
+    sessionId: 'd3d04fc1-full',
+    name: 'release-notes',
+    state: 'blocked',
+  },
   {
     pid: 50727,
     id: 'ba4f4809',
@@ -51,13 +59,16 @@ export type MachineOptions = {
   selfId?: { current: string }
   // The git branch every folder is on; none is a folder outside a repository.
   branch?: string
+  // The transcripts that hold a custom title, as grep finds it.
+  renamed?: string[]
 }
 
 // The machine beneath the plugin, an hour in: `claude agents --json` prints
 // `listed` (`relisted` once set, or `stdout` as given, or fails with
 // `stderr`), `claude stop`
 // stops (or fails with `stopError`), `git` prints `branch` (or fails, as
-// outside a repository), `head` and `tail` print a file's
+// outside a repository), `grep` finds a custom title in the `renamed`
+// transcripts, `head` and `tail` print a file's
 // `outputs` (else `transcript`), the files in `files` exist, Claude Code's
 // projects folder holds `folders`, each of `dirs` lists its files, `texts`
 // are the files read whole and the store holds `stored`; the home folder is
@@ -105,6 +116,18 @@ export async function machine($: Engine, on: On, options: MachineOptions = {}): 
   })
   on('process.run', (_$, e) => {
     seen.ran.push([...e.argv])
+    if (e.argv[0] === 'grep') {
+      const found = (options.renamed ?? []).includes(e.argv.at(-1) ?? '')
+      return {
+        value: {
+          exitCode: found ? 0 : 1,
+          stdout: found ? '{"type":"custom-title"}\n' : '',
+          stderr: '',
+          isStdoutTruncated: false,
+          isStderrTruncated: false,
+        },
+      }
+    }
     if (e.argv[0] === 'git') {
       const { branch } = options
       return {
@@ -180,7 +203,8 @@ export const TAIL = [
   '',
 ].join('\n')
 export const DOCS = '/home/demo/.claude/projects/-home-demo-code-docs/1879e383-full.jsonl'
-export const tails = (ran: string[][]) => ran.filter(argv => argv[0] === 'tail')
+// The reads of a transcript's activity, not of its title.
+export const tails = (ran: string[][]) => ran.filter(argv => argv[0] === 'tail' && argv[2] === '131072')
 
 // docs-site's subagents, beside its transcript, an hour in: b1 written 10
 // seconds ago, b3 exactly a minute ago, b2 a minute and a millisecond ago;

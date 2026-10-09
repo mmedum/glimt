@@ -1,6 +1,6 @@
 {
   "name": "glimt",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "A quiet side pane: what this session is doing now, its plan, its agents as a tree, and every other Claude Code session with theirs",
   "author": {
     "name": "Mark Medum Bundgaard",
@@ -13,6 +13,14 @@
   "documentationUrl": "https://github.com/mmedum/glimt#readme",
   "supportUrl": "https://github.com/mmedum/glimt/issues",
   "privacyPolicyUrl": "https://github.com/mmedum/glimt#privacy",
+  "userConfig": {
+    "notifications": {
+      "type": "boolean",
+      "title": "Notifications",
+      "description": "Notify when a background session starts waiting for you, finishes or fails; only one glimt on the machine does",
+      "default": true
+    }
+  },
   "keywords": ["claude-code", "mod", "pane", "agents", "subagents", "sessions", "tui"],
   "types": "./types/index.d.ts"
 }

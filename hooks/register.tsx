@@ -23,7 +23,7 @@ import type {
 } from '../types'
 import { agentSection, askCall, askingOf, contextTokens, isStoppable, isTurnRunning, mainAgent, withCalls } from './agents'
 import type { Spawned } from './agents'
-import { FEED_KEPT, TAIL_BYTES, callLine, drillSection, isShownText, lastModel, parseTranscript } from './drill'
+import { FEED_KEPT, TAIL_BYTES, callLine, drillSection, isShownText, lastModel, parseTranscript, titleOf } from './drill'
 import { FORM_ROWS, composerSection, helpSection, keySection, selfSection } from './keys'
 import { applyUpdate, nowSection, parentFrom, planLines, planSection, planTitle, planUnits, rowCount } from './plan'
 import type { StepUpdate } from './plan'
@@ -34,9 +34,11 @@ import {
   STALE_MS,
   isReachable,
   isSessionBusy,
+  endingOf,
   isNotifier,
   isShared,
   nextPhases,
+  sharedFolders,
   parseSessions,
   sessionSection,
   sortSessions,
@@ -84,6 +86,10 @@ const sessions = atom({ plugin: 'glimt', key: 'sessions' } as const, null)
 const sessionsError = atom({ plugin: 'glimt', key: 'sessionsError' } as const, null)
 const phases = atom({ plugin: 'glimt', key: 'phases' } as const, {})
 const hasTaskList = atom({ plugin: 'glimt', key: 'hasTaskList' } as const, null)
+const mode = atom({ plugin: 'glimt', key: 'mode' } as const, null)
+const limits = atom({ plugin: 'glimt', key: 'limits' } as const, [])
+const engine = atom({ plugin: 'glimt', key: 'engine' } as const, null)
+const titles = atom({ plugin: 'glimt', key: 'titles' } as const, {})
 const stopping = atom({ plugin: 'glimt', key: 'stopping' } as const, null)
 const self = atom({ plugin: 'glimt', key: 'self' } as const, null)
 const shared = atom({ plugin: 'glimt', key: 'shared' } as const, {})
@@ -97,6 +103,13 @@ const help = atom({ plugin: 'glimt', key: 'help' } as const, false)
 
 const transcripts = new Map<string, string>()
 
+// Claude Code's own titles: whether each session was renamed (then its name
+// stays), and when its title was last read; read again after TITLE_MS, from
+// the transcript's last TITLE_BYTES.
+const TITLE_MS = 30_000
+const TITLE_BYTES = 65_536
+const titleReads = new Map<string, { isRenamed: boolean; at: number }>()
+
 // Each folder's git branch as last read, and when: read again after BRANCH_MS.
 const BRANCH_MS = 30_000
 const branches = new Map<string, { branch: string | undefined; at: number }>()
@@ -104,7 +117,9 @@ const branches = new Map<string, { branch: string | undefined; at: number }>()
 // Each subagent's type and description, by its meta file: they never change.
 const metas = new Map<string, { type: string; description: string }>()
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  runtime.notifies = options.notifications !== false
+
   // The command last: a refused registration then leaves the pane and its clock running.
   on('session.start', async ($, e, next) => {
     $.clock.every(FRAME_MS, () => void tick($))
@@ -292,6 +307,8 @@ export const register: Register = on => {
   on('turn.step', async function* ($, e, next) {
     const loopId = e.agentId
     if (loopId === undefined) {
+      const use = { model: e.model, effort: typeof e.effort === 'string' ? e.effort : undefined }
+      await update($, engine, () => use)
       await update($, focus, f => (f === null || (f.calls ?? []).length === 0 ? f : withCalls(f, [])))
     } else {
       await update($, agents, list => list.map(a => (a.agentId === loopId && (a.calls ?? []).length > 0 ? withCalls(a, []) : a)))
@@ -368,6 +385,30 @@ export const register: Register = on => {
       )
     }
 
+    return next(e)
+  })
+
+  // This session's permission mode, as these events carry it: read only, the
+  // events handed on as they came. A mode changed with shift+tab shows by the
+  // next prompt, tool call or turn's end; Claude Code's own footer says it
+  // first. Permission events are left alone for this.
+  on('classic.UserPromptSubmit', async ($, e, next) => {
+    await noteMode($, e.permission_mode, e.agent_id)
+    return next(e)
+  })
+  on('classic.PostToolUse', async ($, e, next) => {
+    await noteMode($, e.permission_mode, e.agent_id)
+    return next(e)
+  })
+  on('classic.Stop', async ($, e, next) => {
+    await noteMode($, e.permission_mode, e.agent_id)
+    return next(e)
+  })
+
+  // The plan's limit windows, as Claude Code measures them after a response.
+  on('session.measure', async ($, e, next) => {
+    const windows = e.rateLimits.map(limit => ({ kind: limit.kind, percentUsed: limit.percentUsed, resetsAt: limit.resetsAt }))
+    await update($, limits, () => windows)
     return next(e)
   })
 
@@ -479,7 +520,7 @@ export const register: Register = on => {
 
     // This session at the top; the other sessions on the machine, and what
     // their glimts share, at the bottom.
-    const listed = await read($, sessions)
+    const listed = named(await read($, sessions), await read($, titles))
     const selfId = await read($, self)
     const others = listed === null ? null : sortSessions(listed.filter(s => s.sessionId !== selfId))
     const sharedBy = await read($, shared)
@@ -513,11 +554,17 @@ export const register: Register = on => {
         )
       : undefined
 
+    const folders = sharedFolders(listed ?? [])
+    const selfSession = listed?.find(s => s.sessionId === selfId)
     const header = selfSection(view, {
-      session: listed?.find(s => s.sessionId === selfId),
+      session: selfSession,
       isOpen: open.includes('self'),
       isClearing: await read($, clearing),
       answer: isYes => void answerClear($, isYes),
+      mode: await read($, mode),
+      limits: await read($, limits),
+      isSameFolder: selfSession !== undefined && folders.has(selfSession.cwd),
+      engine: await read($, engine),
     })
     // Esc in the form's field hands the keyboard back to the prompt and raises
     // nothing else: drawn without the keyboard, the form shows no more, and
@@ -577,6 +624,7 @@ export const register: Register = on => {
         agent: into.kind === 'agent' ? team.find(a => a.id === into.id) : undefined,
         session: sessionId === undefined ? undefined : listed?.find(s => s.sessionId === sessionId),
         phase: into.kind === 'session' ? (await read($, phases))[into.sessionId] : undefined,
+        mode: sessionId === undefined ? undefined : sharedBy[sessionId]?.mode,
         remoteAgent: into.kind === 'remote' ? remoteBy[into.sessionId]?.agents.find(a => a.id === into.agentId) : undefined,
         remote: sessionId === undefined ? undefined : remoteBy[sessionId],
         shared: sessionId === undefined ? [] : (sharedBy[sessionId]?.agents ?? []),
@@ -679,6 +727,7 @@ export const register: Register = on => {
         asked: await read($, stopping),
         answer: isYes => void answerStop($, isYes),
         phases: await read($, phases),
+        folders,
       },
       shareOf(SESSION_SHARE) + spare - Math.max(0, crew.rows - shareOf(AGENT_SHARE)),
     )
@@ -1125,7 +1174,9 @@ async function readSessions($: EngineInterface, isAsked: boolean) {
   // The clock may have stood still a while: ages count from now.
   const at = await $.clock.now()
   await update($, now, () => at)
+  const was = await read($, sessions)
   await update($, sessions, () => list)
+  void readTitles($, list).catch(() => undefined)
   await update($, sessionsError, () => null)
   // A background session that started waiting since the last read is told
   // of; one in a terminal of its own notifies from there.
@@ -1143,18 +1194,85 @@ async function readSessions($: EngineInterface, isAsked: boolean) {
     )
     return after
   })
+  // One that finished or failed since the last read is told of too.
   const sharedBy = await read($, shared)
-  for (const s of started.filter(one => isNotifier(selfId, one.sessionId, sharedBy))) {
-    void tellWaiting($, s).catch(() => undefined)
+  const byId = await read($, titles)
+  const nameOf = (s: Session) => byId[s.sessionId] ?? s.name
+  const notes = [
+    ...started.map(s => ({ s, text: waitingNote({ ...s, name: nameOf(s) }) })),
+    ...list.flatMap(s => {
+      const ending =
+        s.sessionId === selfId
+          ? undefined
+          : endingOf(
+              was?.find(one => one.sessionId === s.sessionId),
+              s,
+            )
+      return ending === undefined ? [] : [{ s, text: `${nameOf(s)} ${ending}` }]
+    }),
+  ]
+  for (const note of notes.filter(one => isNotifier(selfId, one.s.sessionId, sharedBy))) {
+    void tell($, note.text).catch(() => undefined)
   }
   await loadShared($, list, at).catch(() => undefined)
 }
 
+// The sessions with Claude Code's own title in place of the name of any
+// never renamed.
+function named(list: Session[] | null, byId: Record<string, string>): Session[] | null {
+  return (
+    list?.map(s => {
+      const title = byId[s.sessionId]
+      return title === undefined ? s : { ...s, name: title }
+    }) ?? null
+  )
+}
+
+// Claude Code's own titles for sessions never renamed. Whether a session was
+// ever renamed is read once, from its whole transcript (grep stops at the
+// first custom title); its latest generated title from the transcript's tail
+// every TITLE_MS. A tail with no title keeps the one last read.
+async function readTitles($: EngineInterface, list: Session[]) {
+  const at = await $.clock.now()
+  for (const s of list) {
+    const known = titleReads.get(s.sessionId)
+    if (known !== undefined && (known.isRenamed || at - known.at < TITLE_MS)) {
+      continue
+    }
+    const path = await transcriptOf($, s)
+    if (path === null) {
+      continue
+    }
+
+    let isRenamed = false
+    if (known === undefined) {
+      const found = await $.process.run(['grep', '-m', '1', '-F', '"type":"custom-title"', path], { timeoutMs: 5000 }).catch(() => undefined)
+      isRenamed = found?.exitCode === 0
+    }
+    const tail = isRenamed ? undefined : await $.process.run(['tail', '-c', String(TITLE_BYTES), path], { timeoutMs: 5000 }).catch(() => undefined)
+    const title = tail?.exitCode === 0 ? titleOf(tail.stdout) : { isRenamed: false }
+    isRenamed = isRenamed || title.isRenamed
+    titleReads.set(s.sessionId, { isRenamed, at })
+    const id = s.sessionId
+    const generated = isRenamed ? undefined : title.generated
+    await update($, titles, all => {
+      if (isRenamed) {
+        const { [id]: _gone, ...rest } = all
+        return rest
+      }
+      return generated === undefined || all[id] === generated ? all : { ...all, [id]: generated }
+    })
+  }
+}
+
 // A notification through the person's own channel, or a toast where no
 // channel sent it (or Claude Code is older than $.ui.notify); nothing where
-// they turned notifications off.
-async function tellWaiting($: EngineInterface, s: Session) {
-  const text = waitingNote(s)
+// they turned notifications off, in Claude Code or with glimt's option.
+async function tell($: EngineInterface, text: string) {
+  if (!runtime.notifies) {
+    return
+  }
+
   let sent: Awaited<ReturnType<EngineInterface['ui']['notify']>> | null
   try {
     sent = await $.ui.notify(text)
@@ -1163,6 +1281,14 @@ async function tellWaiting($: EngineInterface, s: Session) {
   }
   if (sent === null || (!sent.isSent && sent.reason !== 'disabled' && sent.reason !== 'refused')) {
     $.ui.toast(text)
+  }
+}
+
+// This session's permission mode, from an event of the main conversation
+// that carries it.
+async function noteMode($: EngineInterface, permissionMode: string | undefined, agentId: string | undefined) {
+  if (permissionMode !== undefined && agentId === undefined) {
+    await update($, mode, was => (was === permissionMode ? was : permissionMode))
   }
 }
 
@@ -1232,9 +1358,11 @@ async function share($: EngineInterface) {
   const list = await read($, steps)
   const progress = list.length === 0 ? undefined : { done: list.filter(step => step.status === 'completed').length, total: list.length }
   const watching = await read($, isShown)
-  const text = JSON.stringify({ running, progress, watching })
+  const permissions = (await read($, mode)) ?? undefined
+  const context = (await read($, focus))?.percent
+  const text = JSON.stringify({ running, progress, watching, permissions, context })
   if (text !== runtime.lastShared || at - runtime.lastSharedAt >= HEARTBEAT_MS) {
-    await $.store.set(`agents:${id}`, { at, agents: running, plan: progress, watching })
+    await $.store.set(`agents:${id}`, { at, agents: running, plan: progress, watching, mode: permissions, context })
     runtime.lastShared = text
     runtime.lastSharedAt = at
   }

@@ -4,6 +4,18 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-09
+
+### Added
+
+- A status row under this session's name, shown only when something is out of the ordinary: bypass permissions, a plan limit from 80% used with when it resets, or another session in the same folder.
+- `same folder` on any session that shares its folder with another.
+- A session never renamed goes by the title Claude Code gave it.
+- Where another session runs glimt, its row shows `bypass` while it runs in bypass permissions and its context from 80% full; going into it names its permission mode.
+- A background session that ended shows `done`, `✗ failed` or `■ stopped`.
+- A notification when a background session finishes or fails, and a Notifications option to turn glimt's notifications off.
+- Opening this session's row shows the main conversation's model and effort.
+
 ## [0.3.2] - 2026-10-09
 
 ### Fixed

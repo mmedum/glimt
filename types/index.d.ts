@@ -114,9 +114,26 @@ export type SharedAgent = {
 }
 
 // What a session's glimt shares: when it last did, its running agents, how
-// far its plan has come, and whether its pane is drawn (so it reads the
-// session list, and may be the one to notify).
-export type Shared = { at: number; agents: SharedAgent[]; plan?: { done: number; total: number } | undefined; watching?: boolean | undefined }
+// far its plan has come, whether its pane is drawn (so it reads the session
+// list, and may be the one to notify), its permission mode as last seen,
+// and how full its context window is, in percent.
+export type Shared = {
+  at: number
+  agents: SharedAgent[]
+  plan?: { done: number; total: number } | undefined
+  watching?: boolean | undefined
+  mode?: string | undefined
+  context?: number | undefined
+}
+
+// One of the plan's limit windows as Claude Code reports it: `five_hour`,
+// `seven_day` or a gateway's `spend_limit`, how much of it is used, and when
+// it resets (ISO 8601).
+export type Limit = { kind: string; percentUsed: number; resetsAt?: string | undefined }
+
+// The main conversation's model and effort, as its latest model request
+// named them.
+export type ModelUse = { model: string; effort?: string | undefined }
 
 // The form open at the top of the pane: a new agent, here or as a new
 // background session, or a new name for a session.
@@ -174,6 +191,15 @@ declare module 'claude-code' {
       // Whether this session's requests offer Claude a task list; null
       // before the first. Once one does, it stays true.
       hasTaskList: boolean | null
+      // This session's permission mode as the last event that carries it
+      // said; null before one has.
+      mode: string | null
+      // The plan's limit windows as last measured.
+      limits: Limit[]
+      // The main conversation's model and effort; null before its first request.
+      engine: ModelUse | null
+      // Claude Code's own titles for sessions never renamed, by session id.
+      titles: Record<string, string>
       // What `x` asked to stop, waiting for y or n: a session by its id, or
       // one of this session's agents as "agent:" and its id.
       stopping: string | null

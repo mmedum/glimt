@@ -162,6 +162,28 @@ export function tildePath(path: string, home: string): string {
   return `~${path.slice(home.length)}`
 }
 
+// One word or phrase of a row of facts: what it says, how it is drawn, and
+// how long it keeps its place when room runs short (higher stays longer).
+export type Part = { text: string; color?: string | undefined; isBold?: boolean | undefined; rank: number }
+
+// The parts that fit in `room` cells joined by " · ", in their order: the
+// lowest ranked go first until the rest fit.
+export function fitParts(parts: Part[], room: number): Part[] {
+  let kept = parts
+  const width = (some: Part[]) => some.reduce((sum, part, i) => sum + cells(part.text) + (i === 0 ? 0 : 3), 0)
+  while (kept.length > 0 && width(kept) > room) {
+    const lowest = Math.min(...kept.map(part => part.rank))
+    const at = kept.findLastIndex(part => part.rank === lowest)
+    kept = kept.filter((_, i) => i !== at)
+  }
+
+  return kept
+}
+
+export function partsText(parts: Part[]): string {
+  return parts.map(part => part.text).join(' · ')
+}
+
 // mcp__server__tool reads as tool.
 export function toolName(tool: string): string {
   return tool.startsWith('mcp__') ? tool.split('__').slice(2).join('__') : tool

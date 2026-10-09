@@ -1,11 +1,12 @@
 // The other Claude Code sessions on the machine, and their agents: how they
 // are listed, sorted and drawn.
 
-import type { Phase, RemoteAgent, RemoteList, Session, SessionState, Shared, SharedAgent } from '../types'
+import type { Limit, Phase, RemoteAgent, RemoteList, Session, SessionState, Shared, SharedAgent } from '../types'
 import { TASK_LINES } from './agents'
 import { runtime } from './state'
-import { cells, clip, fit, fitStart, isRecord, minutes, spin, tildePath, toolName, wrap } from './text'
-import { heading } from './view'
+import { cells, clip, fit, fitParts, fitStart, isRecord, minutes, partsText, spin, tildePath, toolName, wrap } from './text'
+import type { Part } from './text'
+import { heading, partsNode } from './view'
 import type { View } from './view'
 
 // Shared agents are written again this often unchanged, so a reader can tell
@@ -23,6 +24,47 @@ export const SHARED_TASK = 400
 export const REMOTE_KEPT = 20
 export const REMOTE_SHOWN = 6
 export const ACTIVE_MS = 60_000
+
+// A limit window shows once this much of it is used, and at full weight
+// from LIMIT_LOUD; another session's context shows once this full.
+export const LIMIT_SHOWN = 80
+export const LIMIT_LOUD = 95
+export const CONTEXT_SHOWN = 80
+
+// Claude Code's permission modes in its own words, without its glyphs.
+const MODE_WORDS: Record<string, string> = {
+  default: 'manual mode',
+  plan: 'plan mode',
+  acceptEdits: 'accept edits',
+  auto: 'auto mode',
+  dontAsk: "don't ask",
+  bypassPermissions: 'bypass permissions',
+}
+
+export function modeWords(mode: string): string {
+  return MODE_WORDS[mode] ?? mode
+}
+
+// A limit window by its length: "5h limit 84%".
+const LIMIT_NAMES: Record<string, string> = { five_hour: '5h limit', seven_day: '7d limit', spend_limit: 'spend limit' }
+
+export function limitText(limit: Limit): string {
+  return `${LIMIT_NAMES[limit.kind] ?? limit.kind} ${Math.round(limit.percentUsed)}%`
+}
+
+// The folders more than one live session runs in.
+export function sharedFolders(list: Session[]): ReadonlySet<string> {
+  const seen = new Set<string>()
+  const twice = new Set<string>()
+  for (const s of list) {
+    if (seen.has(s.cwd)) {
+      twice.add(s.cwd)
+    }
+    seen.add(s.cwd)
+  }
+
+  return twice
+}
 
 export function isShared(value: unknown): value is Shared {
   if (typeof value !== 'object' || value === null) {
@@ -93,6 +135,32 @@ export type Listing = {
   asked: string | null
   answer: (isYes: boolean) => void
   phases: Record<string, Phase>
+  // The folders more than one live session runs in.
+  folders: ReadonlySet<string>
+}
+
+// A session's name keeps at least this many cells before its facts give way.
+const MIN_NAME = 8
+
+// What another session's row says after its name, in this order: its state,
+// bypass permissions (amber), a context window from CONTEXT_SHOWN, another
+// session in its folder, how long it has been in its state, its plan's
+// progress and its running agents. Short of room the last go first; the
+// state, bypass and the folder go last.
+export function sessionParts(view: View, word: string, phase: Phase | undefined, share: Shared | undefined, isSameFolder: boolean): Part[] {
+  const context = share?.context
+  const running = share?.agents.length ?? 0
+  const percent = context === undefined ? '' : `${Math.round(context)}%`
+
+  return [
+    { text: word, rank: 10 },
+    ...(share?.mode === 'bypassPermissions' ? [{ text: 'bypass', color: 'warning', rank: 9 }] : []),
+    ...(context !== undefined && context >= CONTEXT_SHOWN ? [{ text: view.columns < 50 ? percent : `${percent} context`, rank: 6 }] : []),
+    ...(isSameFolder ? [{ text: 'same folder', rank: 8 }] : []),
+    ...(phase?.since === undefined ? [] : [{ text: minutes(view.at - phase.since), rank: 5 }]),
+    ...(share?.plan === undefined ? [] : [{ text: `${share.plan.done}/${share.plan.total}`, rank: 4 }]),
+    ...(running === 0 ? [] : [{ text: `${running} ${running === 1 ? 'agent' : 'agents'}`, rank: 3 }]),
+  ]
 }
 
 // The other Claude Code sessions on the machine in `room` rows, one line
@@ -174,10 +242,11 @@ export function sessionSection(view: View, listing: Listing, room: number) {
           const { mark, color, word } = sessionMark(s, view.at)
           const phase = listing.phases[s.sessionId]
           const isUnseen = phase?.isUnseen === true
-          const running = sharedOf(s).length
-          const plan = listing.shared[s.sessionId]?.plan
-          const progress = plan === undefined ? '' : ` · ${plan.done}/${plan.total}`
-          const tally = `${stateText(word, phase, view.at)}${progress}${running === 0 ? '' : ` · ${running} ${running === 1 ? 'agent' : 'agents'}`}`
+          const parts = fitParts(
+            sessionParts(view, word, phase, listing.shared[s.sessionId], listing.folders.has(s.cwd)),
+            view.columns - 4 - MIN_NAME - 1,
+          )
+          const tally = partsText(parts)
 
           return (
             <Box key={`session-${s.sessionId}`} flexDirection="column">
@@ -197,7 +266,8 @@ export function sessionSection(view: View, listing: Listing, room: number) {
                     </Text>
                   </Text>
                 </Box>
-                <Text dimColor> {tally}</Text>
+                <Text> </Text>
+                {partsNode(view, parts)}
               </Box>
               {asked === s.sessionId && (
                 <Box key={`stop-${s.sessionId}`} flexDirection="row" columnGap={2} paddingLeft={4}>
@@ -380,12 +450,23 @@ export function sessionState(s: Session): SessionState {
 const WANTS: Record<string, 'approve' | 'answer'> = { 'permission prompt': 'approve', 'sandbox request': 'approve', 'input needed': 'answer' }
 
 // A session's mark and word: the spinner while it works, ◉ while it waits
-// for its person, ○ while it idles. The word says it again without color,
-// and a waiting session's says what it wants, where it says why it waits.
+// for its person, ○ while it idles; a background session that ended keeps
+// the agents' marks, ✗ failed and ■ stopped, and one done says so. The word
+// says it again without color, and a waiting session's says what it wants,
+// where it says why it waits.
 export function sessionMark(s: Session, at: number): { mark: string; color: string; word: string } {
   const state = sessionState(s)
   if (state === 'waiting') {
     return { mark: '◉', color: 'warning', word: WANTS[s.waitingFor ?? ''] ?? 'waiting' }
+  }
+  if (state === 'idle' && s.state === 'failed') {
+    return { mark: '✗', color: 'error', word: 'failed' }
+  }
+  if (state === 'idle' && s.state === 'stopped') {
+    return { mark: '■', color: 'warning', word: 'stopped' }
+  }
+  if (state === 'idle' && s.state === 'done') {
+    return { mark: '○', color: 'subtle', word: 'done' }
   }
 
   return state === 'working' ? { mark: spin(at), color: 'claude', word: 'working' } : { mark: '○', color: 'subtle', word: 'idle' }
@@ -413,11 +494,22 @@ export function nextPhases(before: Record<string, Phase>, list: Session[], at: n
 }
 
 // Whether this session's glimt is the one on the machine to tell of
-// `waiting`: of the panes drawn, the one whose session id sorts first, the
-// waiting session's own left out. Every glimt reaches the same answer from
-// the shares, so one notification goes out, not one per pane.
-export function isNotifier(selfId: string | null, waiting: string, shared: Record<string, Shared>): boolean {
-  return Object.entries(shared).every(([id, share]) => share.watching !== true || id === waiting || id > (selfId ?? ''))
+// `subject`: of the panes drawn, the one whose session id sorts first, the
+// subject's own left out. Every glimt reaches the same answer from the
+// shares, so one notification goes out, not one per pane.
+export function isNotifier(selfId: string | null, subject: string, shared: Record<string, Shared>): boolean {
+  return Object.entries(shared).every(([id, share]) => share.watching !== true || id === subject || id > (selfId ?? ''))
+}
+
+// What a background session's change of state since the last read is worth
+// a notification for: it finished or failed. One already ended at the first
+// read is left alone.
+export function endingOf(was: Session | undefined, s: Session): 'finished' | 'failed' | undefined {
+  if (was === undefined || s.kind !== 'background' || was.state === s.state) {
+    return undefined
+  }
+
+  return s.state === 'done' ? 'finished' : s.state === 'failed' ? 'failed' : undefined
 }
 
 // What a notification says of a session that started waiting.

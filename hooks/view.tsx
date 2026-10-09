@@ -2,6 +2,7 @@
 
 import type { ElementTable } from 'claude-code'
 import { cells, fit } from './text'
+import type { Part } from './text'
 
 export type Ui = Pick<ElementTable, 'Box' | 'Text' | 'Button'>
 export type InputElement = ElementTable<'terminal' | 'desktop'>['Input']
@@ -30,6 +31,27 @@ export function heading({ ui: { Box, Text }, columns }: View, key: string, label
       <Text bold>{shown}</Text>
       {count !== '' && <Text dimColor>{fit(`  ${count}`, columns - cells(shown))}</Text>}
     </Box>
+  )
+}
+
+// A row of facts joined by dim " · ": each dim, or in its own color (amber
+// for a risk) or at full weight (a limit nearly reached).
+export function partsNode({ ui: { Text } }: View, parts: Part[]) {
+  return (
+    <Text>
+      {parts.map((part, i) => (
+        <Text>
+          {i > 0 && <Text dimColor> · </Text>}
+          <Text
+            {...(part.color === undefined ? {} : { color: part.color })}
+            bold={part.isBold === true}
+            dimColor={part.color === undefined && part.isBold !== true}
+          >
+            {part.text}
+          </Text>
+        </Text>
+      ))}
+    </Text>
   )
 }
 

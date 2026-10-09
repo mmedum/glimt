@@ -1,6 +1,7 @@
 import type { On } from 'claude-code'
 import { describe, expect, test } from 'claude-code/testing'
-import { LONG_CLOCK, loops, mount, textOf } from './kit'
+import type { Engine } from 'claude-code/testing'
+import { LONG_CLOCK, loops, modelRequest, modelRequests, mount, textOf } from './kit'
 import { DOCS_BUSY, LISTED, DOCS, TAIL, listReads, machine, offered, onSession, sessionOrder, stops, tails } from './machine'
 
 describe('sessions', () => {
@@ -39,7 +40,7 @@ describe('sessions', () => {
 
   test('says what a waiting session wants, by why it waits', async ($, on) => {
     const waits = (id: string, waitingFor?: string) => ({
-      cwd: '/tmp',
+      cwd: `/tmp/${id}`,
       kind: 'interactive',
       startedAt: 0,
       sessionId: id,
@@ -126,7 +127,7 @@ describe('sessions', () => {
   })
 
   test('folds the idle sessions into one line when the room runs short', async ($, on) => {
-    const idleToo = { pid: 1, cwd: '/tmp', kind: 'interactive', startedAt: 0, sessionId: 'idle-2', name: 'second idle', status: 'idle' }
+    const idleToo = { pid: 1, cwd: '/tmp/idle', kind: 'interactive', startedAt: 0, sessionId: 'idle-2', name: 'second idle', status: 'idle' }
     await machine($, on, { listed: [...LISTED, idleToo] })
 
     // 16 rows give the sessions 4: the heading and three lines, for four sessions.
@@ -445,5 +446,272 @@ describe('notifications', () => {
     await clock.advance(5_000)
     expect(sent.length).toBe(2)
     expect(toasts).toEqual(['release-notes needs your approval'])
+  })
+
+  test('tells of a background session that finishes, and marks it done', async ($, on) => {
+    const sent = notifications(on)
+    const relisted = { current: undefined as unknown }
+    const { clock } = await machine($, on, { listed: WORKING, relisted })
+    const ui = await mount($)
+
+    relisted.current = WORKING.map(s => (s.sessionId === 'd3d04fc1-full' ? { ...s, state: 'done', status: 'idle' } : s))
+    await clock.advance(10_000)
+    expect(sent).toEqual(['release-notes finished'])
+    expect(await textOf(ui, 'session-d3d04fc1-full')).toBe('▸ ○ release-notes done · <1m')
+    // Still done at the next read: told of once.
+    await clock.advance(5_000)
+    expect(sent).toEqual(['release-notes finished'])
+  })
+
+  test('tells of a background session that fails, and marks it failed', async ($, on) => {
+    const sent = notifications(on)
+    const relisted = { current: undefined as unknown }
+    const { clock } = await machine($, on, { listed: LISTED, relisted })
+    const ui = await mount($)
+
+    relisted.current = LISTED.map(s => (s.sessionId === 'd3d04fc1-full' ? { ...s, state: 'failed' } : s))
+    await clock.advance(10_000)
+    expect(sent).toEqual(['release-notes failed'])
+    expect(await textOf(ui, 'session-d3d04fc1-full')).toBe('▸ ✗ release-notes failed · <1m')
+  })
+
+  // Idle at both reads: since when it idles is not known.
+  test('leaves alone a session stopped, or already done at the first read, and marks the stopped one', async ($, on) => {
+    const sent = notifications(on)
+    const relisted = { current: undefined as unknown }
+    const done = LISTED.map(s => (s.sessionId === 'd3d04fc1-full' ? { ...s, state: 'done' } : s))
+    const { clock } = await machine($, on, { listed: done, relisted })
+    const ui = await mount($)
+
+    relisted.current = LISTED.map(s => (s.sessionId === 'd3d04fc1-full' ? { ...s, state: 'stopped' } : s))
+    await clock.advance(10_000)
+    expect(sent).toEqual([])
+    expect(await textOf(ui, 'session-d3d04fc1-full')).toBe('▸ ■ release-notes stopped')
+  })
+
+  test("names the session by Claude Code's generated title", async ($, on) => {
+    const sent = notifications(on)
+    const relisted = { current: undefined as unknown }
+    const notes = '/home/demo/.claude/projects/-home-demo-code-notes/d3d04fc1-full.jsonl'
+    const title = `${JSON.stringify({ type: 'ai-title', aiTitle: 'Write the 0.4 notes', sessionId: 'd3d04fc1-full' })}\n`
+    const { clock } = await machine($, on, { listed: WORKING, relisted, files: [notes], outputs: { [notes]: title } })
+
+    relisted.current = ASKING
+    await clock.advance(10_000)
+    expect(sent).toEqual(['Write the 0.4 notes needs your approval'])
+  })
+
+  test('sends nothing, and shows no toast, with the notifications option off', { options: { notifications: false } }, async ($, on) => {
+    const sent = notifications(on)
+    const relisted = { current: undefined as unknown }
+    const { clock, toasts } = await machine($, on, { listed: WORKING, relisted })
+
+    relisted.current = ASKING
+    await clock.advance(5_000)
+    relisted.current = ASKING.map(s => (s.sessionId === 'd3d04fc1-full' ? { ...s, state: 'failed', status: 'idle' } : s))
+    await clock.advance(5_000)
+    expect(sent).toEqual([])
+    expect(toasts).toEqual([])
+  })
+})
+
+describe('status row', () => {
+  // Beneath the plugins: the events glimt reads this session's mode from,
+  // and the measurement of its limits, each answered as Claude Code would.
+  function quietHooks(on: On) {
+    on('classic.UserPromptSubmit', () => ({}))
+    on('classic.PostToolUse', () => ({}))
+    on('classic.Stop', () => ({}))
+    on('session.measure', (_$, e) => ({ changed: e.changed }))
+  }
+  const measure = ($: Engine, rateLimits: { kind: string; percentUsed: number; resetsAt?: string }[]) =>
+    $.session.measure({ context: { tokens: 0, window: 200_000, percent: 0 }, rateLimits, changed: ['rateLimits'] })
+  // An hour in, 72 minutes from now.
+  const RESETS = new Date(3_600_000 + 72 * 60_000).toISOString()
+
+  test("says bypass permissions while this session's main conversation runs so, and nothing in any other mode", async ($, on) => {
+    quietHooks(on)
+    await machine($, on)
+    const ui = await mount($)
+    expect(await ui.find({ key: 'self-status' })).toBeUndefined()
+
+    await $.classic.UserPromptSubmit({ prompt: 'go', permission_mode: 'bypassPermissions' })
+    expect(await textOf(ui, 'self-status')).toBe('bypass permissions')
+    // A subagent's mode is its own.
+    await $.classic.PostToolUse({ tool_name: 'Read', tool_input: {}, tool_response: {}, tool_use_id: 't1', permission_mode: 'plan', agent_id: 'a1' })
+    expect(await textOf(ui, 'self-status')).toBe('bypass permissions')
+    await $.classic.Stop({ stop_hook_active: false, permission_mode: 'plan' })
+    expect(await ui.find({ key: 'self-status' })).toBeUndefined()
+  })
+
+  test('shows a limit window from 80% used, the fullest first with when it resets, at full weight from 95%', async ($, on) => {
+    quietHooks(on)
+    await machine($, on)
+    const ui = await mount($)
+
+    await measure($, [{ kind: 'five_hour', percentUsed: 79.9, resetsAt: RESETS }])
+    expect(await ui.find({ key: 'self-status' })).toBeUndefined()
+    await measure($, [
+      { kind: 'seven_day', percentUsed: 80 },
+      { kind: 'five_hour', percentUsed: 95, resetsAt: RESETS },
+    ])
+    expect(await textOf(ui, 'self-status')).toBe('5h limit 95% · resets in 1h12m · 7d limit 80%')
+    const bold = (await ui.findAll({ type: 'Text' })).filter(text => text.props.bold === true).map(text => text.text)
+    expect(bold.includes('5h limit 95%')).toBe(true)
+    expect(bold.includes('7d limit 80%')).toBe(false)
+  })
+
+  test('on a narrow pane, shortens bypass and leaves out when a limit resets first', async ($, on) => {
+    quietHooks(on)
+    await machine($, on)
+    const ui = await mount($, { columns: 34 })
+
+    await $.classic.UserPromptSubmit({ prompt: 'go', permission_mode: 'bypassPermissions' })
+    await measure($, [{ kind: 'five_hour', percentUsed: 84, resetsAt: RESETS }])
+    expect(await textOf(ui, 'self-status')).toBe('bypass · 5h limit 84%')
+  })
+
+  test('says same folder where another live session runs in the same folder', async ($, on) => {
+    const twin = { pid: 9, cwd: '/home/demo/code', kind: 'interactive', startedAt: 0, sessionId: 'twin-full', name: 'twin', status: 'idle' }
+    await machine($, on, { listed: [...LISTED, twin] })
+    const ui = await mount($)
+
+    expect(await textOf(ui, 'self-status')).toBe('same folder')
+    expect(await textOf(ui, 'session-twin-full')).toBe('▸ ○ twin idle · same folder')
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ docs-site idle')
+  })
+
+  test('short of room, gives up a second limit window before same folder', async ($, on) => {
+    quietHooks(on)
+    const twin = { pid: 9, cwd: '/home/demo/code', kind: 'interactive', startedAt: 0, sessionId: 'twin-full', name: 'twin', status: 'idle' }
+    await machine($, on, { listed: [...LISTED, twin] })
+    const ui = await mount($, { columns: 40 })
+
+    await measure($, [
+      { kind: 'five_hour', percentUsed: 95, resetsAt: RESETS },
+      { kind: 'seven_day', percentUsed: 80 },
+    ])
+    expect(await textOf(ui, 'self-status')).toBe('5h limit 95% · same folder')
+  })
+
+  test("marks another session's bypass permissions and a context window from 80%, as its glimt shares them", async ($, on) => {
+    const share = (mode: string, context: number) => ({ at: 3_600_000, agents: [], mode, context })
+    const stored = { 'agents:1879e383-full': share('bypassPermissions', 92), 'agents:a15af547-full': share('plan', 79) }
+    await machine($, on, { stored })
+    const wide = await mount($)
+    expect(await textOf(wide, 'session-1879e383-full')).toBe('▸ ○ docs-site idle · bypass · 92% context')
+    expect(await textOf(wide, 'session-a15af547-full')).toBe('▸ ⠋ api-refactor working')
+    const amber = (await wide.findAll({ type: 'Text' })).filter(text => text.props.color === 'warning').map(text => text.text)
+    expect(amber.includes('bypass')).toBe(true)
+    await wide.unmount()
+
+    const narrow = await mount($, { columns: 44 })
+    expect(await textOf(narrow, 'session-1879e383-full')).toBe('▸ ○ docs-site idle · bypass · 92%')
+  })
+
+  test('short of room, gives up the agents, the plan and the time before the state, bypass and the folder', async ($, on) => {
+    const twin = { pid: 9, cwd: '/home/demo/code/docs', kind: 'interactive', startedAt: 0, sessionId: 'twin-full', name: 'twin', status: 'idle' }
+    const stored = {
+      'agents:1879e383-full': {
+        at: 3_600_000,
+        agents: [{ id: 'x', type: 'Explore', description: 'look', task: '', startedAt: 3_600_000, tools: 0 }],
+        plan: { done: 1, total: 4 },
+        mode: 'bypassPermissions',
+      },
+    }
+    await machine($, on, { listed: [...LISTED, twin], stored })
+
+    const wide = await mount($, { columns: 72 })
+    expect(await textOf(wide, 'session-1879e383-full')).toBe('▸ ○ docs-site idle · bypass · same folder · 1/4 · 1 agent')
+    await wide.unmount()
+    const narrow = await mount($, { columns: 40 })
+    // The name keeps its 8 cells; the facts take the 27 left.
+    expect(await textOf(narrow, 'session-1879e383-full')).toBe('▸ ○ docs-si… idle · bypass · same folder')
+  })
+
+  test("shares this session's permission mode and context with the other sessions' glimts", async ($, on) => {
+    quietHooks(on)
+    loops(on)
+    modelRequests(on)
+    on('session.usage', () => ({ value: { startedAt: 0, context: { tokens: 920_000, window: 1_000_000, percent: 92 }, rateLimits: [] } }))
+    const { clock, store } = await machine($, on)
+    await $.classic.UserPromptSubmit({ prompt: 'go', permission_mode: 'acceptEdits' })
+    await $.turn.start({ text: 'go', turnId: 't1' })
+    await modelRequest($)
+
+    await clock.advance(5_000)
+    expect(store.get('agents:self-full')).toEqual({ at: 3_605_000, agents: [], watching: true, mode: 'acceptEdits', context: 92 })
+  })
+
+  test("going into another session names its permission mode in Claude Code's words", async ($, on) => {
+    const stored = { 'agents:1879e383-full': { at: 3_600_000, agents: [], mode: 'acceptEdits' } }
+    await machine($, on, { transcript: TAIL, files: [DOCS], stored })
+    const ui = await onSession($, 3)
+
+    await ui.press({ key: 'key-into' })
+    expect(await textOf(ui, 'drill-title')).toBe('○ docs-site  idle · accept edits  ⎿ ~/code/docs · terminal · 1879e383-full')
+  })
+
+  test("opened, this session's row adds the main conversation's model and effort", async ($, on) => {
+    // The engine's turn.step hook is a generator; this one streams nothing.
+    // oxlint-disable-next-line eslint/require-yield
+    on('turn.step', async function* (_$, e) {
+      return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn', usage: null }
+    })
+    await machine($, on)
+    const ui = await mount($, { isFocused: true })
+    const stream = $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', effort: 'xhigh', messageCount: 1 })
+    for await (const _chunk of stream) {
+      // Read to the end, as the loop does.
+    }
+
+    await ui.press({ key: 'key-down' })
+    await ui.press({ key: 'key-open' })
+    expect((await textOf(ui, 'self'))?.endsWith('⎿ ~/code · Opus 5.5 · xhigh effort · ba4f4809')).toBe(true)
+  })
+})
+
+describe('titles', () => {
+  const titled = (...titles: string[]) =>
+    `${titles.map(title => JSON.stringify({ type: 'ai-title', aiTitle: title, sessionId: '1879e383-full' })).join('\n')}\n`
+
+  test("names a session never renamed by Claude Code's latest generated title", async ($, on) => {
+    const { ran } = await machine($, on, { files: [DOCS], outputs: { [DOCS]: titled('Old title', 'Docs build fix') } })
+    const ui = await mount($)
+
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ Docs build fix idle')
+    expect(ran.filter(argv => argv[0] === 'grep')).toEqual([['grep', '-m', '1', '-F', '"type":"custom-title"', DOCS]])
+  })
+
+  test('keeps the name of a session renamed at any point, early in its transcript or in its tail', async ($, on) => {
+    const renamedLate = `${titled('Docs build fix')}${JSON.stringify({ type: 'custom-title', customTitle: 'docs-site' })}\n`
+    const api = '/home/demo/.claude/projects/-srv-api/a15af547-full.jsonl'
+    const { ran } = await machine($, on, {
+      files: [DOCS, api],
+      renamed: [DOCS],
+      outputs: { [DOCS]: titled('Docs build fix'), [api]: renamedLate },
+    })
+    const ui = await mount($)
+
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ docs-site idle')
+    expect(await textOf(ui, 'session-a15af547-full')).toBe('▸ ⠋ api-refactor working')
+    // A session found renamed is not read for a title.
+    expect(ran.filter(argv => argv[0] === 'tail' && argv.at(-1) === DOCS)).toEqual([])
+  })
+
+  test('reads the title again every 30 seconds, keeping the last one when the tail holds none', LONG_CLOCK, async ($, on) => {
+    const outputs: Record<string, string> = { [DOCS]: titled('First title') }
+    const { clock } = await machine($, on, { files: [DOCS], outputs })
+    const ui = await mount($)
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ First title idle')
+
+    outputs[DOCS] = '{"type":"user"}\n'
+    await clock.advance(30_000)
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ First title idle')
+    outputs[DOCS] = titled('Second title')
+    await clock.advance(25_000)
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ First title idle')
+    await clock.advance(5_000)
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ Second title idle')
   })
 })

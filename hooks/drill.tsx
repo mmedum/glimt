@@ -3,7 +3,7 @@
 
 import type { Activity, Agent, Feed, Opened, Phase, RemoteAgent, RemoteList, Session, SharedAgent } from '../types'
 import { agentMark, agentTally, askingOf, callOf, isStoppable } from './agents'
-import { isReachable, placeOf, remoteMark, remoteSection, remoteTally, sessionMark, stateText } from './sessions'
+import { isReachable, modeWords, placeOf, remoteMark, remoteSection, remoteTally, sessionMark, stateText } from './sessions'
 import { clip, describeCall, fit, fitStart, isRecord, modelName, toolName, wrap } from './text'
 import { heading, keyButton, keyWidth, wrappedRows } from './view'
 import type { View } from './view'
@@ -77,6 +77,32 @@ export function lastModel(text: string, isSubagent = false): string | undefined 
   return model
 }
 
+// What a transcript's lines say of its session's name: whether it was
+// renamed (a custom title), and the latest title Claude Code generated.
+export function titleOf(text: string): { isRenamed: boolean; generated?: string | undefined } {
+  let isRenamed = false
+  let generated: string | undefined
+  for (const line of text.split('\n')) {
+    if (!line.includes('title')) {
+      continue
+    }
+    let entry: unknown
+    try {
+      entry = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (isRecord(entry) && entry.type === 'custom-title') {
+      isRenamed = true
+    }
+    if (isRecord(entry) && entry.type === 'ai-title' && typeof entry.aiTitle === 'string' && entry.aiTitle.trim() !== '') {
+      generated = entry.aiTitle.trim()
+    }
+  }
+
+  return { isRenamed, generated }
+}
+
 export function isShownText(text: string): boolean {
   const trimmed = text.trim()
 
@@ -99,8 +125,10 @@ export type Drill = {
   // another session's agent.
   agent: Agent | undefined
   session: Session | undefined
-  // The session's state as glimt watched it.
+  // The session's state as glimt watched it, and its permission mode as its
+  // glimt shares it.
   phase: Phase | undefined
+  mode: string | undefined
   remoteAgent: RemoteAgent | undefined
   // The session's agents as read, what its glimt shares, and whether it
   // runs one at all (to take a new name).
@@ -162,7 +190,8 @@ export function drillSection(view: View, drill: Drill) {
   } else if (into.kind === 'session' && session !== undefined) {
     const { mark, color, word } = sessionMark(session, view.at)
     title = { mark, color, name: session.name }
-    facts = [withModel(stateText(word, drill.phase, view.at), got?.model), fitStart(`⎿ ${placeOf(session, got?.branch)}`, width - 2)]
+    const mode = drill.mode === undefined ? '' : ` · ${modeWords(drill.mode)}`
+    facts = [`${withModel(stateText(word, drill.phase, view.at), got?.model)}${mode}`, fitStart(`⎿ ${placeOf(session, got?.branch)}`, width - 2)]
   } else if (into.kind === 'remote' && remoteAgent !== undefined) {
     const share = shared.find(one => one.id === remoteAgent.id)
     title = { ...remoteMark(view, remoteAgent, share), name: `${remoteAgent.type} ${remoteAgent.description}` }

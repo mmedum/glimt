@@ -1,10 +1,12 @@
 // The keys and the forms: the key row, the key list i opens, this session's
 // row, and the form n, s and r open.
 
-import type { Composer, Session } from '../types'
+import type { Composer, Limit, ModelUse, Session } from '../types'
 import { runtime } from './state'
-import { cells, fit, fitStart, tildePath } from './text'
-import { keyButton, keyWidth, wrappedRows } from './view'
+import { LIMIT_LOUD, LIMIT_SHOWN, limitText } from './sessions'
+import { cells, fit, fitParts, fitStart, minutes, modelName, tildePath } from './text'
+import type { Part } from './text'
+import { keyButton, keyWidth, partsNode, wrappedRows } from './view'
 import type { View } from './view'
 
 export type Keys = Record<'down' | 'up' | 'into' | 'back' | 'open' | 'spawn' | 'help' | 'rename' | 'clear' | 'attach' | 'stop', () => void>
@@ -100,19 +102,54 @@ export function helpSection(view: View, act: HelpActions) {
   )
 }
 
-export type SelfState = { session: Session | undefined; isOpen: boolean; isClearing: boolean; answer: (isYes: boolean) => void }
+// What this session's rows say beside its name: the permission mode as last
+// seen, the plan's limits, whether another session runs in its folder, and
+// the main conversation's model and effort.
+export type SelfState = {
+  session: Session | undefined
+  isOpen: boolean
+  isClearing: boolean
+  answer: (isYes: boolean) => void
+  mode: string | null
+  limits: Limit[]
+  isSameFolder: boolean
+  engine: ModelUse | null
+}
 
-// This session at the top: its name, opened its folder and id, and after c
-// the question whether to clear the conversation.
+// The status row under this session's name, empty while all is usual:
+// bypass permissions in amber, each limit window from LIMIT_SHOWN (the
+// fullest first, with when it resets), another session in the same folder.
+// Short of room, when it resets goes first, then the other windows, then
+// the folder.
+export function selfStatus(view: View, state: SelfState): Part[] {
+  const shown = state.limits.filter(limit => limit.percentUsed >= LIMIT_SHOWN).toSorted((a, b) => b.percentUsed - a.percentUsed)
+  const resets = shown[0]?.resetsAt === undefined ? Number.NaN : Date.parse(shown[0].resetsAt)
+  const parts: Part[] = [
+    ...(state.mode === 'bypassPermissions' ? [{ text: view.columns < 36 ? 'bypass' : 'bypass permissions', color: 'warning', rank: 9 }] : []),
+    ...shown.flatMap((limit, i) => [
+      { text: limitText(limit), isBold: limit.percentUsed >= LIMIT_LOUD, rank: i === 0 ? 8 : 6 - i },
+      ...(i === 0 && !Number.isNaN(resets) ? [{ text: `resets in ${minutes(resets - view.at)}`, rank: 1 }] : []),
+    ]),
+    ...(state.isSameFolder ? [{ text: 'same folder', rank: 7 }] : []),
+  ]
+
+  return fitParts(parts, view.columns - 2)
+}
+
+// This session at the top: its name, under it the status row while it has
+// something to say, opened its folder, model, effort and id, and after c the
+// question whether to clear the conversation.
 export function selfSection(view: View, state: SelfState) {
   const { Box, Button, Text } = view.ui
-  const { session, isOpen, isClearing } = state
+  const { session, isOpen, isClearing, engine } = state
   // Until the session list names it, the row just says what it is.
   const name = session?.name
   const where = session === undefined ? '' : tildePath(session.cwd, runtime.home)
+  const status = selfStatus(view, state)
+  const use = engine === null ? '' : ` · ${modelName(engine.model)}${engine.effort === undefined ? '' : ` · ${engine.effort} effort`}`
 
   return {
-    rows: 1 + (isOpen && session !== undefined ? 1 : 0) + (isClearing ? 1 : 0),
+    rows: 1 + (status.length > 0 ? 1 : 0) + (isOpen && session !== undefined ? 1 : 0) + (isClearing ? 1 : 0),
     node: (
       <Box key="self" flexDirection="column">
         <Box flexDirection="row">
@@ -125,10 +162,15 @@ export function selfSection(view: View, state: SelfState) {
             {name !== undefined && <Text dimColor>{'  this session'}</Text>}
           </Text>
         </Box>
+        {status.length > 0 && (
+          <Box key="self-status" paddingLeft={2}>
+            {partsNode(view, status)}
+          </Box>
+        )}
         {isOpen && session !== undefined && (
           <Text dimColor>
             {'  ⎿ '}
-            {fitStart(`${where} · ${session.id ?? session.sessionId}`, view.columns - 4)}
+            {fitStart(`${where}${use} · ${session.id ?? session.sessionId}`, view.columns - 4)}
           </Text>
         )}
         {isClearing && (
