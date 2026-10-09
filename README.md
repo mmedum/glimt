@@ -51,7 +51,7 @@ Under this session's name, a status row speaks up only when something is out of 
 
 A waiting session says what it wants: `approve` for a permission prompt, `answer` for a question. A background session that ended says `done`, `failed` or `stopped`. Each other session shows how long it has been in its state, counted from when glimt saw that state begin, and its name turns bold when it stops, until you open it. A session you never renamed goes by the title Claude Code gave it, as in its resume list. A row says `same folder` when another session runs in the same folder. Where another session runs glimt, its row also shows how far its plan has come, as in `3/7`, `bypass` in amber while it runs in bypass permissions, and its context from 80% full. Going into a session names its permission mode.
 
-When a background session starts waiting for you, finishes or fails, glimt sends a notification. With glimt open in several terminals, only one of them does. Turn them off with glimt's Notifications option in `/config`.
+When a background session starts waiting for you, finishes or fails, glimt sends a notification. With glimt open in several terminals, only one of them does. Turn them off with glimt's Notifications option: `/plugin configure glimt@glimt` in Claude Code, then restart it.
 
 An agent with a call waiting for your approval shows `◉` and `approve` with the tool and what it runs, as in `approve Bash · git push`. Claude Code tells a mod when a call is put to you, not when you answer, so the mark stays until that call ends.
 
