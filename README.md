@@ -27,23 +27,21 @@ Third-party marketplaces don't update on their own. To update, run `claude plugi
 
 ## Keys
 
-The keys work while the pane holds the keyboard: open it with `/glimt`, click it, or press ctrl+x tab. The key row shows the keys that apply to the selected row; `i` lists them all.
+The keys work while the pane holds the keyboard: open it with `/glimt`, click it, or press ctrl+x tab. As in Neovim's side panels, glimt binds only its own actions and leaves moving to Claude Code: ↑ ↓ and Tab move between rows, Enter opens or closes the row (a step's description, an agent's task, a session's agents), and Esc gives the keyboard back to the prompt. The key row shows only what the selected row allows; `i` lists every key.
 
-| Key     | Does                                                                             |
-| ------- | -------------------------------------------------------------------------------- |
-| `j` `k` | move down and up (↓ ↑ and Tab work too)                                          |
-| `l`     | go into an agent or a session: its task, model, branch and live activity         |
-| `h`     | back out, one level at a time                                                    |
-| `o`     | open or close the row: a step's description, an agent's task, a session's agents |
-| `n`     | new agent here                                                                   |
-| `s`     | new background session (`claude --bg`), from the `i` list                        |
-| `r`     | rename this session, or another session running glimt                            |
-| `c`     | clear this conversation, after asking                                            |
-| `m`     | write to the agent or session you are in                                         |
-| `a`     | copy a background session's `claude attach` command                              |
-| `x`     | stop a background session or agent, after asking                                 |
-| `i`     | all keys                                                                         |
-| `q`     | close the pane, from the `i` list                                                |
+| Key | Does                                                                     |
+| --- | ------------------------------------------------------------------------ |
+| `l` | go into an agent or a session: its task, model, branch and live activity |
+| `h` | back out, one level at a time, from the line that names where it goes    |
+| `n` | new agent here                                                           |
+| `s` | new background session (`claude --bg`), from the `i` list                |
+| `r` | rename this session, or another session running glimt                    |
+| `c` | clear this conversation, after asking                                    |
+| `m` | write to the agent or session you are in                                 |
+| `a` | copy a background session's `claude attach` command                      |
+| `x` | stop a background session or agent, after asking                         |
+| `i` | all keys                                                                 |
+| `q` | close the pane, from the `i` list                                        |
 
 A spinner marks whatever is working right now: a running agent, a working session, the step in progress while Claude is on it. The rest keep still marks: `◉` waiting for you, `○` idle, `✓` done, `✗` failed, `■` stopped.
 
@@ -63,6 +61,7 @@ Mods run with your permissions, so here is everything glimt touches. `claude plu
 
 - This session's tool calls, tasks, subagents and turns, through the mod API, and the messages of one of its agents while you are inside it.
 - This session's permission mode, from the hook events that carry it, and its plan limits, from Claude Code's usage measurements.
+- Claude Code's own list of this session's agents (`$.agent.list`), every 5 seconds while glimt shows one as running, so an agent whose end it missed doesn't stay running.
 - The sessions on this machine and their state, from `claude agents --json`, every 5 seconds while the pane is drawn.
 - Each listed session's transcript under `~/.claude/projects/`, for the title Claude Code gave it: once, whether the session was ever renamed, and while it never was, the transcript's last 64 KiB every 30 seconds while the pane is drawn.
 - Under `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR/projects/`), for a session you open: its subagents' file names and `.meta.json` files every 5 seconds, its transcript's last 128 KiB every 2 seconds while you are inside it, and an agent's first line when you open that agent.

@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { describe, expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { LONG_CLOCK, loops, modelRequest, modelRequests, mount, textOf } from './kit'
+import { LONG_CLOCK, loops, modelRequest, modelRequests, mount, moveTo, textOf } from './kit'
 import { DOCS_BUSY, LISTED, DOCS, TAIL, listReads, machine, offered, onSession, sessionOrder, stops, tails } from './machine'
 
 describe('sessions', () => {
@@ -92,11 +92,11 @@ describe('sessions', () => {
     relisted.current = LISTED
     await clock.advance(5_000)
     expect(await isBold()).toBe(true)
-    await ui.press({ key: 'key-open' })
+    await ui.press({ key: 'toggle-session-1879e383-full' })
     expect(await isBold()).toBe(false)
 
     // It works again, and stops again: bold until l goes into it.
-    await ui.press({ key: 'key-open' })
+    await ui.press({ key: 'toggle-session-1879e383-full' })
     relisted.current = DOCS_BUSY
     await clock.advance(5_000)
     expect(await isBold()).toBe(false)
@@ -104,7 +104,7 @@ describe('sessions', () => {
     await clock.advance(5_000)
     expect(await isBold()).toBe(true)
     await ui.press({ key: 'key-into' })
-    await ui.press({ key: 'key-back' })
+    await ui.press({ key: 'back' })
     expect(await isBold()).toBe(false)
   })
 
@@ -184,7 +184,7 @@ describe('sessions', () => {
 
     const background = await onSession($, 1)
     expect(await offered(background)).toEqual(['key-attach', 'key-stop'])
-    await background.press({ key: 'key-down' })
+    await moveTo($, 'toggle-session-a15af547-full')
     expect(await offered(background)).toEqual([])
   })
 
@@ -224,11 +224,10 @@ describe('sessions', () => {
   test('writes the home folder as ~ only up to a folder boundary', async ($, on) => {
     const at = (id: string, cwd: string) => ({ cwd, kind: 'interactive', startedAt: 0, sessionId: id, name: id, status: 'idle' })
     await machine($, on, { listed: [at('s1', '/home/demo'), at('s2', '/home/demo/api'), at('s3', '/home/demox/api')] })
-    // Past this session's row onto s1, then each in turn, opened.
-    const ui = await onSession($, 1)
+    // Each opened in turn.
+    const ui = await mount($)
     for (const id of ['s1', 's2', 's3']) {
-      await ui.press({ key: 'key-open' })
-      await ui.press({ key: 'key-down' })
+      await ui.press({ key: `toggle-session-${id}` })
       expect(await ui.find({ key: `session-detail-${id}` })).toBeDefined()
     }
     const folder = async (id: string) => (await textOf(ui, `session-detail-${id}`))?.split(' · ')[0]
@@ -240,9 +239,9 @@ describe('sessions', () => {
 
   test('an opened session shows its folder, kind and id', async ($, on) => {
     await machine($, on)
-    const ui = await onSession($, 3)
+    const ui = await mount($)
 
-    await ui.press({ key: 'key-open' })
+    await ui.press({ key: 'toggle-session-1879e383-full' })
     expect((await textOf(ui, 'session-detail-1879e383-full'))?.startsWith('  ⎿ ~/code/docs · terminal · 1879e383-full')).toBe(true)
   })
 
@@ -280,7 +279,7 @@ describe('sessions', () => {
     expect(await textOf(ui, 'activity')).toBe('› Check the build● Running it now.  ⎿ Bash · npm test● All 12 tests pass.')
     expect(await ui.find({ key: 'sessions-heading' })).toBeUndefined()
 
-    await ui.press({ key: 'key-back' })
+    await ui.press({ key: 'back' })
     expect(await textOf(ui, 'sessions-heading')).toBe('Sessions  1 waiting · 1 working')
   })
 
@@ -291,7 +290,7 @@ describe('sessions', () => {
 
     await clock.advance(4_000)
     expect(tails(ran).length).toBe(3)
-    await ui.press({ key: 'key-back' })
+    await ui.press({ key: 'back' })
     await clock.advance(4_000)
     expect(tails(ran).length).toBe(3)
   })
@@ -665,8 +664,7 @@ describe('status row', () => {
       // Read to the end, as the loop does.
     }
 
-    await ui.press({ key: 'key-down' })
-    await ui.press({ key: 'key-open' })
+    await ui.press({ key: 'toggle-self' })
     expect((await textOf(ui, 'self'))?.endsWith('⎿ ~/code · Opus 5.5 · xhigh effort · ba4f4809')).toBe(true)
   })
 })

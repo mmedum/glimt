@@ -1,7 +1,23 @@
-import type { On } from 'claude-code'
+import type { AgentInfo, On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine, Plugin } from 'claude-code/testing'
-import { LONG_CLOCK, ask, finish, inAgent, loops, modelRequest, modelRequests, mount, prompts, spawn, startSession, textOf, tokens } from './kit'
+import {
+  LONG_CLOCK,
+  ask,
+  finish,
+  focusRing,
+  inAgent,
+  loops,
+  modelRequest,
+  modelRequests,
+  mount,
+  moveTo,
+  prompts,
+  spawn,
+  startSession,
+  textOf,
+  tokens,
+} from './kit'
 
 describe('agents', () => {
   test('shows the main conversation first: its tool count and a clock that stops when the turn ends', LONG_CLOCK, async ($, on) => {
@@ -288,6 +304,40 @@ describe('agents', () => {
     await ask($, 'Next thing')
     expect(await ui.find({ key: 'agent-a1' })).toBeUndefined()
     expect(await textOf(ui, 'agent-a2')).toBe('▸ ⠋ Explore still running <1m · 0 tools')
+  })
+})
+
+describe('agents ended unseen', () => {
+  // An escaped bug: an agent whose end never reached glimt (the mod reloaded
+  // as it ended) showed as running for good, here and in other sessions.
+  test("ends an agent Claude Code's own list says ended, or no longer lists, and keeps one still running", async ($, on) => {
+    const clock = mock.clock(on)
+    loops(on)
+    const info = (id: string, status: AgentInfo['status']): AgentInfo => ({ id, description: id, type: 'Explore', status })
+    const listed = { current: [] as AgentInfo[] }
+    on('agent.list', () => ({ value: listed.current }))
+    await startSession($, on)
+    const ids = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'a7']
+    for (const id of ids) {
+      await spawn($, id, id)
+    }
+    // a7's end reached glimt: interrupted at once.
+    await finish($, 'a7', 'aborted')
+    const ui = await mount($)
+
+    // a4 and a7 are no longer listed; a6 is a teammate waiting for a message.
+    listed.current = [info('a1', 'running'), info('a2', 'completed'), info('a3', 'killed'), info('a5', 'failed'), info('a6', 'idle')]
+    await clock.advance(5_000)
+    const rows = await Promise.all(ids.map(id => textOf(ui, `agent-${id}`)))
+    expect(rows).toEqual([
+      '▸ ⠋ Explore a1 <1m · 0 tools',
+      '▸ ✓ Explore a2 5s · 0 tools',
+      '▸ ■ Explore a3 5s · 0 tools',
+      '▸ ✓ Explore a4 5s · 0 tools',
+      '▸ ✗ Explore a5 5s · 0 tools',
+      '▸ ⠋ Explore a6 <1m · 0 tools',
+      '▸ ■ Explore a7 0s · 0 tools',
+    ])
   })
 })
 
@@ -605,18 +655,18 @@ describe('waiting on approval', () => {
 describe('models', () => {
   test('names a model as people say it, a dated id by its version, and leaves an id it does not know as it is', async ($, on) => {
     mock.clock(on)
+    focusRing(on)
     const models: Record<string, string> = { a1: 'claude-sonnet-4-20250514', a2: 'gateway-model-x' }
     on('agent.spawn', (_$, e) => ({ model: models[e.tool_use_id.slice(3)] ?? '', agentId: e.tool_use_id.slice(3) }))
     await spawn($, 'a1', 'one')
     await spawn($, 'a2', 'two')
     const ui = await mount($, { isFocused: true })
-    await ui.press({ key: 'key-down' })
-    await ui.press({ key: 'key-down' })
+    await moveTo($, 'toggle-agent-a1')
 
     await ui.press({ key: 'key-into' })
     expect(await textOf(ui, 'drill-title')).toBe('⠋ Explore one  <1m · 0 tools · Sonnet 4')
-    await ui.press({ key: 'key-back' })
-    await ui.press({ key: 'key-down' })
+    await ui.press({ key: 'back' })
+    await moveTo($, 'toggle-agent-a2')
     await ui.press({ key: 'key-into' })
     expect(await textOf(ui, 'drill-title')).toBe('⠋ Explore two  <1m · 0 tools · gateway-model-x')
   })
@@ -630,6 +680,7 @@ describe('stopping an agent', () => {
 
   async function onAgentRow($: Engine, on: On, background: boolean, stop: () => Stopped = () => STOPPED) {
     mock.clock(on)
+    focusRing(on)
     loops(on)
     const stopped: string[] = []
     const toasts: string[] = []
@@ -643,8 +694,7 @@ describe('stopping an agent', () => {
     })
     await spawn($, 'a1', 'find loaders', { background })
     const ui = await mount($, { isFocused: true })
-    await ui.press({ key: 'key-down' })
-    await ui.press({ key: 'key-down' })
+    await moveTo($, 'toggle-agent-a1')
     const offersStop = async () => (await ui.findAll({ type: 'Button' })).some(button => button.key === 'key-stop')
 
     return { ui, stopped, toasts, offersStop }

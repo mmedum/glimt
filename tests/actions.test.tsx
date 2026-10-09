@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { mount, textOf } from './kit'
+import { mount, moveTo, textOf } from './kit'
 import { machine, onSession } from './machine'
 
 describe('actions', () => {
@@ -61,7 +61,7 @@ describe('actions', () => {
     })
     await machine($, on)
     const ui = await mount($, { isFocused: true })
-    await ui.press({ key: 'key-down' })
+    await moveTo($, 'toggle-self')
 
     await ui.press({ key: 'key-rename' })
     expect((await ui.find({ key: 'composer-field' }))?.props.label).toBe('Rename glimt work')
@@ -73,8 +73,7 @@ describe('actions', () => {
     const { store } = await machine($, on, { stored: { 'agents:1879e383-full': { at: 3_600_000, agents: [] } } })
     const ui = await onSession($, 1)
     expect(await ui.find({ key: 'key-rename' })).toBeUndefined()
-    await ui.press({ key: 'key-down' })
-    await ui.press({ key: 'key-down' })
+    await moveTo($, 'toggle-session-1879e383-full')
 
     await ui.press({ key: 'key-rename' })
     await ui.input({ key: 'composer-field', text: 'payments' })
@@ -103,7 +102,7 @@ describe('actions', () => {
     await machine($, on)
     const ui = await mount($, { isFocused: true })
     expect(await ui.find({ key: 'key-clear' })).toBeUndefined()
-    await ui.press({ key: 'key-down' })
+    await moveTo($, 'toggle-self')
 
     await ui.press({ key: 'key-clear' })
     expect((await textOf(ui, 'clear-ask'))?.startsWith('Clear this conversation?')).toBe(true)

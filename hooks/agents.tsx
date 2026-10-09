@@ -1,6 +1,6 @@
 // This session's agents: the main conversation and its subagents as a tree.
 
-import type { ModelUsage } from 'claude-code'
+import type { AgentInfo, ModelUsage } from 'claude-code'
 import type { Agent, AgentState, Focus, RunningCall } from '../types'
 import { cells, clip, duration, fit, fitStart, minutes, spin, tokenNumber, toolName, wrap } from './text'
 import { heading } from './view'
@@ -76,6 +76,27 @@ export const ASK_SHOWN_MS = 1000
 
 // A loop's calls after one starts or ends: the latest names its tool and
 // what it is on.
+// The agents glimt holds as running, set right by Claude Code's own list of
+// the session's agents: one it lists as ended, or no longer lists (it drops
+// a subagent's task a while after the end), ended. glimt learns an end from
+// the agent's turn.complete, which a reload of the mod in between loses; an
+// agent with no id of its own, or still running, waiting or idle, is kept.
+// Nothing ended, the same list.
+export function settled(list: Agent[], listed: AgentInfo[], at: number): Agent[] {
+  const ends: Partial<Record<AgentInfo['status'], AgentState>> = { completed: 'done', failed: 'failed', killed: 'stopped' }
+  const statuses = new Map(listed.map(info => [info.id, info.status]))
+  const after = list.map(a => {
+    if (a.state !== 'running' || a.agentId === undefined) {
+      return a
+    }
+    const status = statuses.get(a.agentId)
+    const state = status === undefined ? 'done' : ends[status]
+    return state === undefined ? a : withCalls({ ...a, state, endedAt: at }, [])
+  })
+
+  return after.every((a, i) => a === list[i]) ? list : after
+}
+
 export function withCalls<T extends { calls?: RunningCall[] | undefined; tool?: string | undefined; doing?: string | undefined }>(
   item: T,
   calls: RunningCall[],

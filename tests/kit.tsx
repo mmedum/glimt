@@ -22,6 +22,17 @@ export function mount($: Engine, { surface = 'terminal', columns = 72, rows = 40
 
 export type Mounted = Awaited<ReturnType<typeof mount>>
 
+// Claude Code's focus ring beneath glimt: a move lands where it is asked.
+export function focusRing(on: On) {
+  on('ui.focus', () => ({}))
+}
+
+// Up, Down or Tab onto `element`, as the person moves Claude Code's focus
+// ring; glimt's cursor follows it onto a row's toggle. Needs focusRing.
+export function moveTo($: Engine, element: string) {
+  return $.ui.focus({ component: 'Pane', requestId: 'glimt', element, origin: { kind: 'person' } })
+}
+
 export async function textOf(ui: Mounted, key: string) {
   return (await ui.find({ key }))?.text
 }

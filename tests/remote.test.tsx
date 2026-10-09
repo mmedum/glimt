@@ -1,26 +1,25 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { textOf } from './kit'
+import { moveTo, textOf } from './kit'
 import { AGENTS_MACHINE, DOCS, SUBAGENTS, TAIL, machine, onSession, sessionOrder } from './machine'
 
 describe("other sessions' agents", () => {
-  test('o opens a session onto its agents, newest first, spinning while written to within a minute', async ($, on) => {
+  test('opening a session shows its agents, newest first, spinning while written to within a minute', async ($, on) => {
     await machine($, on, AGENTS_MACHINE)
     const ui = await onSession($, 3)
 
-    await ui.press({ key: 'key-open' })
+    await ui.press({ key: 'toggle-session-1879e383-full' })
     expect(await textOf(ui, 'remote-1879e383-full-b1')).toBe('  ├─ ▸ ⠋ Explore find loaders <1m ago')
     expect(await textOf(ui, 'remote-1879e383-full-b3')).toBe('  ├─ ▸ ⠋ Plan plan the move 1m ago')
     expect(await textOf(ui, 'remote-1879e383-full-b2')).toBe('  └─ ▸ ○ general-purpose review the diff 1m ago')
     expect(await sessionOrder(ui)).toEqual(['session-d3d04fc1-full', 'session-a15af547-full', 'session-1879e383-full'])
   })
 
-  test("j walks onto a session's agents and o opens one's task, from the first line of its transcript", async ($, on) => {
+  test("opening one of a session's agents shows its task, from the first line of its transcript", async ($, on) => {
     const { ran } = await machine($, on, AGENTS_MACHINE)
     const ui = await onSession($, 3)
-    await ui.press({ key: 'key-open' })
+    await ui.press({ key: 'toggle-session-1879e383-full' })
 
-    await ui.press({ key: 'key-down' })
-    await ui.press({ key: 'key-open' })
+    await ui.press({ key: 'toggle-remote-1879e383-full-b1' })
     expect(ran.filter(argv => argv[0] === 'head')).toEqual([['head', '-n', '1', `${SUBAGENTS}/agent-b1.jsonl`]])
     expect(await textOf(ui, 'remote-1879e383-full-b1')).toBe('  ├─ ▾ ⠋ Explore find loaders <1m ago       Find where hooks are loaded.')
   })
@@ -37,17 +36,19 @@ describe("other sessions' agents", () => {
     await ui.press({ key: 'key-into' })
     expect(await textOf(ui, 'drill-agents-heading')).toBe('Agents  3')
     expect(await back()).toBe('← Overview')
-    await ui.press({ key: 'key-down' })
+    // l shows once the cursor is on one of the agents.
+    expect(await ui.find({ key: 'key-into' })).toBeUndefined()
+    await moveTo($, 'toggle-remote-1879e383-full-b1')
     await ui.press({ key: 'key-into' })
     expect(await textOf(ui, 'drill-title')).toBe('⠋ Explore find loaders  <1m ago  ⎿ in docs-site')
     expect(await back()).toBe('← docs-site')
     expect(await textOf(ui, 'drill-task')).toBe('Task  Find where hooks are loaded.')
     expect(await textOf(ui, 'activity')).toBe('  ⎿ Grep · register● It is in hooks/load.ts.')
 
-    await ui.press({ key: 'key-back' })
+    await ui.press({ key: 'back' })
     expect(await textOf(ui, 'drill-agents-heading')).toBe('Agents  3')
     expect(await highlighted()).toEqual(['Explore find loaders'])
-    await ui.press({ key: 'key-back' })
+    await ui.press({ key: 'back' })
     expect(await highlighted()).toEqual(['docs-site'])
   })
 
@@ -60,7 +61,7 @@ describe("other sessions' agents", () => {
     const ui = await onSession($, 3)
     expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ docs-site idle · 1 agent')
 
-    await ui.press({ key: 'key-open' })
+    await ui.press({ key: 'toggle-session-1879e383-full' })
     expect(await textOf(ui, 'remote-1879e383-full-b2')).toBe('  └─ ▸ ⠋ general-purpose review the diff 1m · 3 tools')
   })
 
@@ -72,7 +73,7 @@ describe("other sessions' agents", () => {
     await machine($, on, { ...AGENTS_MACHINE, stored: { 'agents:1879e383-full': share } })
     const ui = await onSession($, 3)
 
-    await ui.press({ key: 'key-open' })
+    await ui.press({ key: 'toggle-session-1879e383-full' })
     expect(await textOf(ui, 'remote-1879e383-full-b2')).toBe('  └─ ▸ ◉ general-purpose review the diff 1m · approve Bash')
   })
 
@@ -81,7 +82,7 @@ describe("other sessions' agents", () => {
     await machine($, on, { transcript: TAIL, files: [DOCS], dirs: { [SUBAGENTS]: many } })
     const ui = await onSession($, 3)
 
-    await ui.press({ key: 'key-open' })
+    await ui.press({ key: 'toggle-session-1879e383-full' })
     expect(await sessionOrder(ui)).toEqual(['session-d3d04fc1-full', 'session-a15af547-full', 'session-1879e383-full'])
     expect(await ui.find({ key: 'sessions-more' })).toBeUndefined()
   })
@@ -92,7 +93,7 @@ describe("other sessions' agents", () => {
     await machine($, on, { transcript: TAIL, files: [DOCS], dirs: { [SUBAGENTS]: files } })
     const ui = await onSession($, 3)
 
-    await ui.press({ key: 'key-open' })
+    await ui.press({ key: 'toggle-session-1879e383-full' })
     expect(await textOf(ui, 'remote-1879e383-full-c1')).toBe('  ├─ ▸ ⠋ Agent  <1m ago')
     expect(await textOf(ui, 'remote-1879e383-full-c2')).toBe('  ├─ ▸ ⠋ Agent  1m ago')
     expect(await textOf(ui, 'remote-1879e383-full-c3')).toBe('  ├─ ▸ ○ Agent  59m ago')
@@ -105,7 +106,7 @@ describe("other sessions' agents", () => {
     await machine($, on, { transcript: TAIL, files: [DOCS], dirs: { [SUBAGENTS]: many } })
     const ui = await onSession($, 3)
 
-    await ui.press({ key: 'key-open' })
+    await ui.press({ key: 'toggle-session-1879e383-full' })
     // Opened, it stays on show though the room is short.
     expect((await sessionOrder(ui)).includes('session-1879e383-full')).toBe(true)
     expect(await textOf(ui, 'remote-older-1879e383-full')).toBe('  └─ +2 older')

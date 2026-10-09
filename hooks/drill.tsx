@@ -145,9 +145,6 @@ export type Drill = {
   act: {
     back: () => void
     into: () => void
-    down: () => void
-    up: () => void
-    open: () => void
     message: () => void
     send: (to: { sessionId: string } | { agentId: string }, name: string, text: string) => void
     rename: () => void
@@ -224,39 +221,16 @@ export function drillSection(view: View, drill: Drill) {
     Input !== undefined &&
     !isGone &&
     (into.kind === 'session' || (into.kind === 'agent' && agent?.state === 'running' && agent.agentId !== undefined))
-  const canWalk = crew !== undefined && crew.toggles.length > 0
+  const canInto = crew?.toggles.some(toggle => toggle.key === view.cursor) === true
   const canReach = into.kind === 'session' && session !== undefined && isReachable(session)
   const canStopAgent = into.kind === 'agent' && agent !== undefined && isStoppable(agent)
   const canRename = into.kind === 'session' && session !== undefined && drill.isSharing
-  // The keys, as the overview pairs them: j, k, l and o only where there are
-  // agents to walk, h always; each with the cells it takes, to count the
-  // rows the row wraps to.
-  const pair = keyWidth('↓') + 1 + keyWidth('↑')
+  // The keys, as the overview binds them: l on one of a session's agents,
+  // then what the pane is in allows; h sits on the way back above. Each
+  // with the cells it takes, to count the rows the row wraps to.
   const keyItems = drill.isFocused
     ? [
-        ...(canWalk
-          ? [
-              {
-                width: pair,
-                node: (
-                  <Box key="key-walk" flexDirection="row" columnGap={1}>
-                    {keyButton(view, 'down', 'j', '↓', act.down)}
-                    {keyButton(view, 'up', 'k', '↑', act.up)}
-                  </Box>
-                ),
-              },
-              {
-                width: pair,
-                node: (
-                  <Box key="key-go" flexDirection="row" columnGap={1}>
-                    {keyButton(view, 'back', 'h', '←', act.back)}
-                    {keyButton(view, 'into', 'l', '→', act.into)}
-                  </Box>
-                ),
-              },
-              { width: keyWidth('open'), node: keyButton(view, 'open', 'o', 'open', act.open) },
-            ]
-          : [{ width: keyWidth('← back'), node: keyButton(view, 'back', 'h', '← back', act.back) }]),
+        ...(canInto ? [{ width: keyWidth('into'), node: keyButton(view, 'into', 'l', 'into', act.into) }] : []),
         ...(canMessage ? [{ width: keyWidth('message'), node: keyButton(view, 'message', 'm', 'message', act.message) }] : []),
         ...(canRename ? [{ width: keyWidth('rename'), node: keyButton(view, 'rename', 'r', 'rename', act.rename) }] : []),
         ...(canReach
@@ -299,7 +273,14 @@ export function drillSection(view: View, drill: Drill) {
     toggles: crew?.toggles ?? [],
     node: (
       <Box key="drill" flexDirection="column">
-        <Button key="back" plain dimColor label={fit(`← ${drill.backTo}`, width)} onPress={act.back} />
+        <Button
+          key="back"
+          plain
+          dimColor
+          {...(drill.isFocused ? { hotkey: 'h' } : {})}
+          label={fit(`← ${drill.backTo}`, drill.isFocused ? width - 3 : width)}
+          onPress={act.back}
+        />
         <Box key="drill-title" flexDirection="column" marginTop={1}>
           {title === undefined ? (
             <Text dimColor>{into.kind === 'session' ? 'This session is no longer listed.' : 'This agent is no longer listed.'}</Text>

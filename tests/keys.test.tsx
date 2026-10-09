@@ -1,7 +1,7 @@
 import type { On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { ask, create, finish, inAgent, loops, mount, prompts, spawn, startSession, stepOrder, taskTools, textOf } from './kit'
+import { ask, create, finish, focusRing, inAgent, loops, mount, moveTo, prompts, spawn, startSession, stepOrder, taskTools, textOf } from './kit'
 import type { PaneSize } from './kit'
 
 describe('keys', () => {
@@ -9,6 +9,7 @@ describe('keys', () => {
   // the cursor is on.
   async function focusedPane($: Engine, on: On) {
     mock.clock(on)
+    focusRing(on)
     loops(on)
     taskTools(on)
     await create($, 'one', { description: 'First step.' })
@@ -20,8 +21,11 @@ describe('keys', () => {
     return { ui, highlighted }
   }
 
-  test('shows moving keys, n and i while the pane holds the keyboard, and what the row allows', async ($, on) => {
+  test("shows only what the cursor's row allows, then n and i, while the pane holds the keyboard", async ($, on) => {
     mock.clock(on)
+    focusRing(on)
+    loops(on)
+    await spawn($, 'a1', 'helper')
     const quiet = await mount($)
     expect(await quiet.find({ key: 'keys' })).toBeUndefined()
     await quiet.unmount()
@@ -29,29 +33,34 @@ describe('keys', () => {
     const focused = await mount($, { isFocused: true })
     const hotkeys = async () =>
       (await focused.findAll({ type: 'Button' })).filter(button => button.key?.startsWith('key-') === true).map(button => button.props.hotkey)
-    expect(await hotkeys()).toEqual(['j', 'k', 'h', 'l', 'n', 'i'])
-    // On this session's row: o opens it, c clears it.
-    await focused.press({ key: 'key-down' })
-    expect(await hotkeys()).toEqual(['j', 'k', 'h', 'l', 'o', 'c', 'n', 'i'])
+    expect(await hotkeys()).toEqual(['n', 'i'])
+    // On this session's row, c clears it; on an agent, l goes into it.
+    await moveTo($, 'toggle-self')
+    expect(await hotkeys()).toEqual(['c', 'n', 'i'])
+    await moveTo($, 'toggle-agent-a1')
+    expect(await hotkeys()).toEqual(['l', 'n', 'i'])
   })
 
   test('a key row that wraps takes its rows from the plan; one that just fits takes one', async ($, on) => {
     mock.clock(on)
+    focusRing(on)
     taskTools(on)
     for (const subject of ['one', 'two', 'three', 'four', 'five']) {
       await create($, subject)
     }
 
-    // The keys take 40 cells. At 30 columns they wrap to two rows: 19 rows
-    // less this session, Now, the plan's heading, Agents, Sessions, the
-    // blanks and the three of the key row leave the plan 4, for 5 steps.
-    const wrapped = await mount($, { columns: 30, rows: 19, isFocused: true })
+    // On this session's row the keys take 27 cells (c: clear, n: new, i:
+    // keys). At 26 columns they wrap to two rows: 19 rows less this session,
+    // Now, the plan's heading, Agents, Sessions, the blanks and the three of
+    // the key row leave the plan 4, for 5 steps.
+    const wrapped = await mount($, { columns: 26, rows: 19, isFocused: true })
+    await moveTo($, 'toggle-self')
     expect(await stepOrder(wrapped)).toEqual(['step-1', 'step-2', 'step-3'])
     expect(await textOf(wrapped, 'more')).toBe('  ☐ 2 more')
     await wrapped.unmount()
 
-    // At 40 they just fit on one row, and the plan has 5.
-    const fitting = await mount($, { columns: 40, rows: 19, isFocused: true })
+    // At 27 they just fit on one row, and the plan has 5.
+    const fitting = await mount($, { columns: 27, rows: 19, isFocused: true })
     expect(await stepOrder(fitting)).toEqual(['step-1', 'step-2', 'step-3', 'step-4', 'step-5'])
   })
 
@@ -85,7 +94,7 @@ describe('keys', () => {
 
     await ui.press({ key: 'key-help' })
     expect((await textOf(ui, 'help'))?.startsWith('glimt · github.com/mmedum/glimt')).toBe(true)
-    expect((await textOf(ui, 'help-keys'))?.startsWith('j k: move down and up')).toBe(true)
+    expect((await textOf(ui, 'help-keys'))?.startsWith('↑ ↓: move between rows, as Tab does')).toBe(true)
     expect(await ui.find({ key: 'plan-heading' })).toBeUndefined()
     await ui.press({ key: 'key-help' })
     expect(await textOf(ui, 'plan-heading')).toBe('Plan')
@@ -101,37 +110,16 @@ describe('keys', () => {
     expect((await ui.find({ key: 'composer-field' }))?.props.label).toBe('New agent')
   })
 
-  test('j and k move the cursor over this session, steps and agents, and stop at the ends', async ($, on) => {
-    const { ui, highlighted } = await focusedPane($, on)
+  test("the cursor follows Claude Code's focus ring onto a row, and stays on the row when the ring leaves the rows", async ($, on) => {
+    const { highlighted } = await focusedPane($, on)
     expect(await highlighted()).toEqual([])
 
-    const seen: string[][] = []
-    for (const key of ['key-down', 'key-down', 'key-down', 'key-down', 'key-down', 'key-up']) {
-      await ui.press({ key })
-      seen.push(await highlighted())
-    }
-    // The fifth j finds nothing past the last row, and stays.
-    expect(seen).toEqual([['this session'], ['one'], ['two'], ['Explore helper'], ['Explore helper'], ['two']])
-  })
-
-  test('k starts at the last row when the cursor is on none', async ($, on) => {
-    const { ui, highlighted } = await focusedPane($, on)
-
-    await ui.press({ key: 'key-up' })
-    expect(await highlighted()).toEqual(['Explore helper'])
-  })
-
-  test('o opens what the cursor is on, and closes it again', async ($, on) => {
-    const { ui } = await focusedPane($, on)
-    // Past this session and the first step, to the second.
-    for (const _row of [1, 2, 3]) {
-      await ui.press({ key: 'key-down' })
-    }
-
-    await ui.press({ key: 'key-open' })
-    expect(await textOf(ui, 'detail-2')).toBe('Second step.')
-    await ui.press({ key: 'key-open' })
-    expect(await ui.find({ key: 'detail-2' })).toBeUndefined()
+    await moveTo($, 'toggle-self')
+    expect(await highlighted()).toEqual(['this session'])
+    await moveTo($, 'toggle-2')
+    expect(await highlighted()).toEqual(['two'])
+    await moveTo($, 'key-spawn')
+    expect(await highlighted()).toEqual(['two'])
   })
 
   test('q in the key list closes the pane', async ($, on) => {
@@ -182,12 +170,12 @@ describe('drill-in', () => {
   // focused and its cursor on a1.
   async function onAgent($: Engine, on: On, messages: Message[] | { deny: string } = A1, size: PaneSize = {}) {
     const clock = mock.clock(on)
+    focusRing(on)
     loops(on)
     on('session.messages', (_$, e) => ({ value: e.agentId === 'a1' ? messages : { deny: `no agent ${e.agentId}` } }))
     await spawn($, 'a1', 'find loaders', { prompt: 'Find where hooks are loaded.' })
     const ui = await mount($, { isFocused: true, ...size })
-    await ui.press({ key: 'key-down' })
-    await ui.press({ key: 'key-down' })
+    await moveTo($, 'toggle-agent-a1')
     const highlighted = async () => (await ui.findAll({ type: 'Text' })).filter(text => text.props.inverse === true).map(text => text.text)
 
     return { ui, clock, highlighted }
@@ -202,8 +190,11 @@ describe('drill-in', () => {
     // The task is not repeated as the first activity.
     expect(await textOf(ui, 'activity')).toBe('● Looking in the loader.  ⎿ Grep · register● Found it in hooks/load.ts.')
     expect(await ui.find({ key: 'agents-heading' })).toBeUndefined()
+    // h is the way back's own key, named where it goes.
+    expect((await ui.find({ key: 'back' }))?.props.hotkey).toBe('h')
+    expect(await textOf(ui, 'back')).toBe('← Overview')
 
-    await ui.press({ key: 'key-back' })
+    await ui.press({ key: 'back' })
     expect(await textOf(ui, 'agents-heading')).toBe('Agents  1 running')
     expect(await highlighted()).toEqual(['Explore find loaders'])
   })
@@ -264,20 +255,5 @@ describe('drill-in', () => {
     await finish($, 'a1')
     await ask($, 'Next thing')
     expect(await textOf(ui, 'drill-title')).toBe('This agent is no longer listed.')
-  })
-
-  test('on a step, l opens it and h closes it', async ($, on) => {
-    mock.clock(on)
-    taskTools(on)
-    await create($, 'one', { description: 'First step.' })
-    const ui = await mount($, { isFocused: true })
-    await ui.press({ key: 'key-down' })
-    await ui.press({ key: 'key-down' })
-
-    await ui.press({ key: 'key-into' })
-    await ui.press({ key: 'key-into' })
-    expect(await textOf(ui, 'detail-1')).toBe('First step.')
-    await ui.press({ key: 'key-back' })
-    expect(await ui.find({ key: 'detail-1' })).toBeUndefined()
   })
 })

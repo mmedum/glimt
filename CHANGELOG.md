@@ -4,6 +4,16 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-10
+
+### Changed
+
+- Keys follow Neovim's side panels: glimt binds only its own actions, and moving and opening are Claude Code's ↑ ↓, Tab and Enter. `j`, `k` and `o` are gone; `l` shows only on a row it can go into, and inside a session `h` sits on the line back, which names where it goes.
+
+### Fixed
+
+- An agent whose end glimt missed, as when the mod reloaded while it ended, showed as running for good, in this pane and in other sessions' panes. Every 5 seconds while it shows one as running, glimt now checks Claude Code's own list of the session's agents and ends any that list says ended or no longer lists.
+
 ## [0.4.0] - 2026-10-09
 
 ### Added

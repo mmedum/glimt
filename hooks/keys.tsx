@@ -9,24 +9,24 @@ import type { Part } from './text'
 import { keyButton, keyWidth, partsNode, wrappedRows } from './view'
 import type { View } from './view'
 
-export type Keys = Record<'down' | 'up' | 'into' | 'back' | 'open' | 'spawn' | 'help' | 'rename' | 'clear' | 'attach' | 'stop', () => void>
+export type Keys = Record<'into' | 'spawn' | 'help' | 'rename' | 'clear' | 'attach' | 'stop', () => void>
 
-// What the cursor is on allows: o on any row, c on this session, r on this
-// session or one whose glimt shares, a and x on a background session, x on
-// an agent of this session that runs in the background.
-export type KeyContext = { canOpen: boolean; canClear: boolean; canRename: boolean; canReach: boolean; canStop: boolean }
+// What the cursor is on allows: l on an agent or a session, c on this
+// session, r on this session or one whose glimt shares, a and x on a
+// background session, x on an agent of this session that runs in the
+// background.
+export type KeyContext = { canInto: boolean; canClear: boolean; canRename: boolean; canReach: boolean; canStop: boolean }
 
-// The keys while the pane holds the keyboard: moving, n, and i for the full
-// list always; the rest only where the cursor's row allows them, so the row
-// stays short. A key works only while drawn, so s and q live in the list.
-// Paired keys sit close and groups apart. Up, Down, Tab and Enter work as
-// they do everywhere.
+// The keys while the pane holds the keyboard, as Neovim's side panels bind
+// them: only glimt's own actions, those the cursor's row allows, then n and
+// i. Moving and opening are Claude Code's (Up, Down and Tab move, Enter
+// opens or closes the row, Esc hands the keyboard back), as j, k and Enter
+// are Neovim's. A key works only while drawn, so s and q live in the list.
 export function keySection(view: View, can: KeyContext, keys: Keys) {
   const { Box } = view.ui
   const key = (name: string, hotkey: string, label: string, press: () => void) => keyButton(view, name, hotkey, label, press)
-  const pair = keyWidth('↓') + 1 + keyWidth('↑')
   const labels = [
-    can.canOpen && 'open',
+    can.canInto && 'into',
     can.canRename && 'rename',
     can.canClear && 'clear',
     can.canReach && 'attach',
@@ -36,18 +36,10 @@ export function keySection(view: View, can: KeyContext, keys: Keys) {
   ].filter((label): label is string => label !== false)
 
   return {
-    rows: wrappedRows([pair, pair, ...labels.map(keyWidth)], view.columns, 3),
+    rows: wrappedRows(labels.map(keyWidth), view.columns, 3),
     node: (
       <Box key="keys" flexDirection="row" flexWrap="wrap" columnGap={3}>
-        <Box flexDirection="row" columnGap={1}>
-          {key('down', 'j', '↓', keys.down)}
-          {key('up', 'k', '↑', keys.up)}
-        </Box>
-        <Box flexDirection="row" columnGap={1}>
-          {key('back', 'h', '←', keys.back)}
-          {key('into', 'l', '→', keys.into)}
-        </Box>
-        {can.canOpen && key('open', 'o', 'open', keys.open)}
+        {can.canInto && key('into', 'l', 'into', keys.into)}
         {can.canRename && key('rename', 'r', 'rename', keys.rename)}
         {can.canClear && key('clear', 'c', 'clear', keys.clear)}
         {can.canReach && key('attach', 'a', 'attach', keys.attach)}
@@ -62,15 +54,16 @@ export function keySection(view: View, can: KeyContext, keys: Keys) {
 // What each key does, for the list i opens; the keys that start something or
 // close the pane are pressable there.
 export const KEY_LIST: readonly (readonly [string, string])[] = [
-  ['j k', 'move down and up (↓ ↑ and Tab too)'],
+  ['↑ ↓', 'move between rows, as Tab does'],
+  ['Enter', 'open or close the row'],
   ['l', 'go into an agent or a session'],
   ['h', 'back out'],
-  ['o', 'open or close the row'],
   ['r', 'rename this session, or one running glimt'],
   ['c', 'clear this conversation'],
   ['m', 'write to the agent or session you are in'],
   ['a', "copy a background session's attach command"],
   ['x', 'stop a background session or agent'],
+  ['Esc', 'give the keyboard back to the prompt'],
 ]
 
 export type HelpActions = { spawn: () => void; session: () => void; close: () => void; back: () => void }

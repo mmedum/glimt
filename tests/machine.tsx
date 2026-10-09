@@ -4,7 +4,7 @@
 import type { On } from 'claude-code'
 import { mock } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { mount, startSession } from './kit'
+import { focusRing, mount, moveTo, startSession } from './kit'
 import type { Mounted } from './kit'
 
 // What `claude agents --json` lists: this session ("self-full") and one
@@ -86,6 +86,7 @@ export async function machine($: Engine, on: On, options: MachineOptions = {}): 
   } = options
   const seen = { ran: [] as string[][], toasts: [] as string[], copied: [] as string[] }
   const clock = mock.clock(on, { now: 3_600_000 })
+  focusRing(on)
   mock.env(on, { HOME: '/home/demo' })
   on('session.id', () => ({ value: selfId.current }))
   on('fs.exists', (_$, e) => ({ value: files.includes(e.path) }))
@@ -172,12 +173,11 @@ export const offered = async (ui: Mounted) =>
   (await ui.findAll({ type: 'Button' })).map(button => button.key).filter(key => key === 'key-attach' || key === 'key-stop')
 
 // The pane, focused, its cursor on the `nth` other session (1 is the
-// first): past this session's row, with no step or agent between.
+// first).
 export async function onSession($: Engine, nth: number) {
   const ui = await mount($, { isFocused: true })
-  for (let row = 0; row <= nth; row += 1) {
-    await ui.press({ key: 'key-down' })
-  }
+  const rows = await sessionOrder(ui)
+  await moveTo($, `toggle-${rows[nth - 1] ?? ''}`)
   return ui
 }
 

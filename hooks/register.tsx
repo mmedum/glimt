@@ -21,7 +21,7 @@ import type {
   SharedAgent,
   Step,
 } from '../types'
-import { agentSection, askCall, askingOf, contextTokens, isStoppable, isTurnRunning, mainAgent, withCalls } from './agents'
+import { agentSection, askCall, askingOf, contextTokens, isStoppable, isTurnRunning, mainAgent, settled, withCalls } from './agents'
 import type { Spawned } from './agents'
 import { FEED_KEPT, TAIL_BYTES, callLine, drillSection, isShownText, lastModel, parseTranscript, titleOf } from './drill'
 import { FORM_ROWS, composerSection, helpSection, keySection, selfSection } from './keys'
@@ -45,7 +45,6 @@ import {
   waitingNote,
 } from './sessions'
 import { PANE, runtime } from './state'
-import type { Toggle } from './state'
 import { FRAME_MS, describeCall, firstLine, fit, isRecord, spin, wrap } from './text'
 import type { View } from './view'
 
@@ -124,6 +123,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     $.clock.every(FRAME_MS, () => void tick($))
     $.clock.every(POLL_MS, () => void readSessions($, false).catch(() => undefined))
+    $.clock.every(POLL_MS, () => void settleAgents($).catch(() => undefined))
     $.clock.every(POLL_MS, () => void share($).catch(() => undefined))
     $.clock.every(FEED_MS, () => void readFeed($, true).catch(() => undefined))
     $.clock.every(POLL_MS, () => void readRemote($).catch(() => undefined))
@@ -532,18 +532,14 @@ export const register: Register = (on, options) => {
       ? keySection(
           view,
           {
-            canOpen: view.cursor !== null,
+            canInto: /^toggle-(agent|session|remote)-/.test(view.cursor ?? ''),
             canClear: isOnSelf,
             canRename: renameTarget !== null,
             canReach: pointed !== undefined && isReachable(pointed),
             canStop: pointedAgent !== undefined && isStoppable(pointedAgent),
           },
           {
-            down: () => void move($, 1),
-            up: () => void move($, -1),
             into: () => void goInto($),
-            back: () => void goBack($),
-            open: () => void openFocused($),
             spawn: () => void openComposer($, { kind: 'spawn', where: 'here' }),
             help: () => void update($, help, () => true),
             rename: () => void (renameTarget === null ? undefined : openComposer($, { kind: 'rename', sessionId: renameTarget })),
@@ -608,7 +604,7 @@ export const register: Register = (on, options) => {
       )
     }
 
-    // Gone into an agent or a session, it takes the pane: j and k walk a
+    // Gone into an agent or a session, it takes the pane: the arrows walk a
     // session's agents, and h steps back out to where it was.
     const into = (await read($, opened)).at(-1)
     const remoteBy = await read($, remote)
@@ -638,9 +634,6 @@ export const register: Register = (on, options) => {
         act: {
           back: () => void goBack($),
           into: () => void goInto($),
-          down: () => void move($, 1),
-          up: () => void move($, -1),
-          open: () => void openFocused($),
           message: () => void $.ui.focus({ requestId: PANE, key: 'message-field' }).catch(() => undefined),
           send: (to, name, text) => void sendFromField($, to, name, text),
           rename: () => void (into.kind === 'session' ? openComposer($, { kind: 'rename', sessionId: into.sessionId }) : undefined),
@@ -830,20 +823,10 @@ async function toggle($: EngineInterface, id: string) {
   await update($, steps, list => list.map(one => (one.id === id ? { ...one, description } : one)))
 }
 
-// j and k: the cursor to the next or the previous toggle, from the first or
-// the last when it is on none of them; past either end it stays. Claude
-// Code's focus ring is asked to follow, so Enter presses the same toggle;
-// where it can't, the cursor still stands.
-async function move($: EngineInterface, by: 1 | -1) {
-  const current = await read($, cursor)
-  const at = runtime.toggles.findIndex(one => one.key === current)
-  await point($, runtime.toggles[at === -1 ? (by === 1 ? 0 : runtime.toggles.length - 1) : at + by])
-}
-
 // l: one step in, as Claude Code's agent view goes into a session: from the
 // overview into one of this session's agents, another session or one of its
 // agents; from a session, into one of its agents. The pane shows it alone,
-// its activity read at once. On a step or on this session, l opens the row.
+// its activity read at once.
 async function goInto($: EngineInterface) {
   const key = await read($, cursor)
   const target = runtime.toggles.find(one => one.key === key)?.target
@@ -862,9 +845,6 @@ async function goInto($: EngineInterface) {
           ? { kind: 'remote', sessionId: id, agentId, from }
           : null
   if (step === null) {
-    if (!(await read($, expanded)).includes(target)) {
-      await toggle($, target)
-    }
     return
   }
 
@@ -880,8 +860,7 @@ async function goInto($: EngineInterface) {
   await readFeed($).catch(() => undefined)
 }
 
-// h: one step back out, the cursor on the row it went in from; in the
-// overview, closes the row the cursor is on.
+// h: one step back out, the cursor on the row it went in from.
 async function goBack($: EngineInterface) {
   const last = (await read($, opened)).at(-1)
   if (last !== undefined) {
@@ -892,13 +871,6 @@ async function goBack($: EngineInterface) {
       await $.ui.focus({ requestId: PANE, key: last.from }).catch(() => undefined)
     }
     await readFeed($).catch(() => undefined)
-    return
-  }
-
-  const key = await read($, cursor)
-  const target = runtime.toggles.find(one => one.key === key)?.target
-  if (target !== undefined && (await read($, expanded)).includes(target)) {
-    await toggle($, target)
   }
 }
 
@@ -1132,24 +1104,6 @@ async function transcriptOf($: EngineInterface, s: Session): Promise<string | nu
   return found
 }
 
-async function point($: EngineInterface, target: Toggle | undefined) {
-  if (target === undefined) {
-    return
-  }
-
-  await update($, cursor, () => target.key)
-  await $.ui.focus({ requestId: PANE, key: target.key }).catch(() => undefined)
-}
-
-// o: opens or closes what the cursor is on.
-async function openFocused($: EngineInterface) {
-  const key = await read($, cursor)
-  const target = runtime.toggles.find(one => one.key === key)
-  if (target !== undefined) {
-    await toggle($, target.target)
-  }
-}
-
 // Reads every session from `claude agents --json`: at session start, after a
 // stop, and every POLL_MS while the pane is drawn.
 async function readSessions($: EngineInterface, isAsked: boolean) {
@@ -1330,6 +1284,18 @@ async function loadShared($: EngineInterface, list: Session[], at: number) {
 async function learnSelf($: EngineInterface) {
   const id = await $.session.id().catch(() => null)
   await update($, self, () => id)
+}
+
+// Every POLL_MS, while glimt holds an agent as running: what Claude Code's
+// own list says of it (see settled).
+async function settleAgents($: EngineInterface) {
+  if (!(await read($, agents)).some(a => a.state === 'running' && a.agentId !== undefined)) {
+    return
+  }
+
+  const listed = await $.agent.list()
+  const at = await $.clock.now()
+  await update($, agents, list => settled(list, listed, at))
 }
 
 // Every POLL_MS: this session's running agents and how far its plan has come
