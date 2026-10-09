@@ -15,8 +15,7 @@ describe('keys', () => {
     await create($, 'two', { description: 'Second step.' })
     await spawn($, 'a1', 'helper')
     const ui = await mount($, { isFocused: true })
-    const highlighted = async () =>
-      (await ui.findAll({ type: 'Text' })).filter(text => text.props.inverse === true).map(text => text.text)
+    const highlighted = async () => (await ui.findAll({ type: 'Text' })).filter(text => text.props.inverse === true).map(text => text.text)
 
     return { ui, highlighted }
   }
@@ -29,7 +28,7 @@ describe('keys', () => {
 
     const focused = await mount($, { isFocused: true })
     const hotkeys = async () =>
-      (await focused.findAll({ type: 'Button' })).filter(button => button.key?.startsWith('key-')).map(button => button.props.hotkey)
+      (await focused.findAll({ type: 'Button' })).filter(button => button.key?.startsWith('key-') === true).map(button => button.props.hotkey)
     expect(await hotkeys()).toEqual(['j', 'k', 'h', 'l', 'n', 'i'])
     // On this session's row: o opens it, c clears it.
     await focused.press({ key: 'key-down' })
@@ -189,8 +188,7 @@ describe('drill-in', () => {
     const ui = await mount($, { isFocused: true, ...size })
     await ui.press({ key: 'key-down' })
     await ui.press({ key: 'key-down' })
-    const highlighted = async () =>
-      (await ui.findAll({ type: 'Text' })).filter(text => text.props.inverse === true).map(text => text.text)
+    const highlighted = async () => (await ui.findAll({ type: 'Text' })).filter(text => text.props.inverse === true).map(text => text.text)
 
     return { ui, clock, highlighted }
   }

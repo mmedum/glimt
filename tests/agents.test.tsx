@@ -41,7 +41,7 @@ describe('agents', () => {
     expect(await textOf(ui, 'agent-a4')).toBe('└─ ▸ ⠋ Explore orphan <1m · 0 tools')
   })
 
-  test("shows what a running call is on, a path cut from its start to fit", async ($, on) => {
+  test('shows what a running call is on, a path cut from its start to fit', async ($, on) => {
     mock.clock(on)
     loops(on)
     let release = () => {}
@@ -272,7 +272,7 @@ describe('agents', () => {
     expect(await textOf(ui, 'agent-a3')).toBe('▸ ✓ Explore three 1h00m · 0 tools')
   })
 
-  test("a new request from the person clears finished agents and keeps running ones", async ($, on) => {
+  test('a new request from the person clears finished agents and keeps running ones', async ($, on) => {
     mock.clock(on)
     loops(on)
     prompts(on)
@@ -293,7 +293,7 @@ describe('agents', () => {
 
 describe('chat', () => {
   // A tool row as the transcript asks for it.
-  function row($: Engine, tool: string, { isRunning = false, isErrored = false, input = {} as unknown } = {}) {
+  function row($: Engine, tool: string, { isRunning = false, isErrored = false, input = {} } = {}) {
     return $.ui.mount({
       plugin: 'glimt',
       surface: 'terminal',

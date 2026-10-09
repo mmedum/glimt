@@ -9,14 +9,6 @@
   "homepage": "https://github.com/mmedum/glimt",
   "repository": "https://github.com/mmedum/glimt",
   "license": "Apache-2.0",
-  "keywords": [
-    "claude-code",
-    "mod",
-    "pane",
-    "agents",
-    "subagents",
-    "sessions",
-    "tui"
-  ],
+  "keywords": ["claude-code", "mod", "pane", "agents", "subagents", "sessions", "tui"],
   "types": "./types/index.d.ts"
 }

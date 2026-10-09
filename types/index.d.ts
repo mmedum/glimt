@@ -9,11 +9,11 @@ export type StepStatus = 'pending' | 'in_progress' | 'completed'
 export type Step = {
   id: string
   subject: string
-  description?: string
-  activeForm?: string
+  description?: string | undefined
+  activeForm?: string | undefined
   status: StepStatus
-  startedAt?: number
-  parentId?: string
+  startedAt?: number | undefined
+  parentId?: string | undefined
 }
 
 export type AgentState = 'running' | 'done' | 'failed' | 'stopped'
@@ -26,39 +26,39 @@ export type AgentState = 'running' | 'done' | 'failed' | 'stopped'
 // its context: what its latest model request carried, and the reply.
 export type Agent = {
   id: string
-  agentId?: string
-  parentId?: string
-  stepId?: string
+  agentId?: string | undefined
+  parentId?: string | undefined
+  stepId?: string | undefined
   type: string
   description: string
   task: string
   state: AgentState
   startedAt: number
-  endedAt?: number
+  endedAt?: number | undefined
   tools: number
-  tool?: string
-  doing?: string
-  tokens?: number
+  tool?: string | undefined
+  doing?: string | undefined
+  tokens?: number | undefined
   // How full its context window is, in percent: known for the main
   // conversation alone.
-  percent?: number
+  percent?: number | undefined
 }
 
 // The main conversation's latest turn: when it started and ended, how it
 // ended, the tool it runs now, how many calls it has made and its context.
 export type Focus = {
-  startedAt?: number
-  endedAt?: number
-  outcome?: AgentState
-  tools?: number
-  tool?: string
-  doing?: string
-  tokens?: number
-  percent?: number
+  startedAt?: number | undefined
+  endedAt?: number | undefined
+  outcome?: AgentState | undefined
+  tools?: number | undefined
+  tool?: string | undefined
+  doing?: string | undefined
+  tokens?: number | undefined
+  percent?: number | undefined
 }
 
 // A plan approved in plan mode.
-export type Plan = { title: string; path?: string }
+export type Plan = { title: string; path?: string | undefined }
 
 // One Claude Code session on this machine, as `claude agents --json` lists
 // it. `id` is a background session's short id, what `claude attach` and
@@ -66,19 +66,19 @@ export type Plan = { title: string; path?: string }
 // (waiting for the person) and the like.
 export type Session = {
   sessionId: string
-  id?: string
+  id?: string | undefined
   name: string
   cwd: string
   kind: string
-  status?: string
-  state?: string
-  pid?: number
+  status?: string | undefined
+  state?: string | undefined
+  pid?: number | undefined
   startedAt: number
 }
 
 // A running agent of another session, as that session's glimt shares it
 // through the store every session on the machine reads.
-export type SharedAgent = { id: string; type: string; description: string; task: string; startedAt: number; tools: number; tool?: string }
+export type SharedAgent = { id: string; type: string; description: string; task: string; startedAt: number; tools: number; tool?: string | undefined }
 
 // What a session's glimt shares: when it last did, and its running agents.
 export type Shared = { at: number; agents: SharedAgent[] }
@@ -95,7 +95,7 @@ export type Opened = (
   | { kind: 'agent'; id: string }
   | { kind: 'session'; sessionId: string }
   | { kind: 'remote'; sessionId: string; agentId: string }
-) & { from?: string }
+) & { from?: string | undefined }
 
 // One subagent of another session, as that session's transcript folder lists
 // it: its type and description from the agent's meta file, and when its
@@ -112,7 +112,7 @@ export type Activity = { kind: 'asked' | 'said' | 'call'; text: string }
 
 // The activity last read for what the pane is drilled into, oldest first, or
 // why it could not be read.
-export type Feed = { items: Activity[]; error?: string }
+export type Feed = { items: Activity[]; error?: string | undefined }
 
 declare module 'claude-code' {
   interface PluginState {

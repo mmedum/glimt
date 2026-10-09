@@ -3,7 +3,7 @@ import { textOf } from './kit'
 import { AGENTS_MACHINE, DOCS, SUBAGENTS, TAIL, machine, onSession, sessionOrder } from './machine'
 
 describe("other sessions' agents", () => {
-  test("o opens a session onto its agents, newest first, spinning while written to within a minute", async ($, on) => {
+  test('o opens a session onto its agents, newest first, spinning while written to within a minute', async ($, on) => {
     await machine($, on, AGENTS_MACHINE)
     const ui = await onSession($, 3)
 
@@ -28,8 +28,7 @@ describe("other sessions' agents", () => {
   test("l goes into another session's agent: its task and its activity; h steps back out one level at a time", async ($, on) => {
     await machine($, on, AGENTS_MACHINE)
     const ui = await onSession($, 3)
-    const highlighted = async () =>
-      (await ui.findAll({ type: 'Text' })).filter(text => text.props.inverse === true).map(text => text.text)
+    const highlighted = async () => (await ui.findAll({ type: 'Text' })).filter(text => text.props.inverse === true).map(text => text.text)
 
     // Into the session, onto its first agent, and into that.
     await ui.press({ key: 'key-into' })
@@ -48,7 +47,10 @@ describe("other sessions' agents", () => {
   })
 
   test("a session's glimt share marks its running agents and counts them on its row", async ($, on) => {
-    const share = { at: 3_600_000, agents: [{ id: 'b2', type: 'general-purpose', description: 'review the diff', task: 'Review it.', startedAt: 3_540_000, tools: 3 }] }
+    const share = {
+      at: 3_600_000,
+      agents: [{ id: 'b2', type: 'general-purpose', description: 'review the diff', task: 'Review it.', startedAt: 3_540_000, tools: 3 }],
+    }
     await machine($, on, { ...AGENTS_MACHINE, stored: { 'agents:1879e383-full': share } })
     const ui = await onSession($, 3)
     expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ docs-site idle · 59m · 1 agent')

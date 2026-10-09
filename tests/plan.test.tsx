@@ -1,5 +1,20 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
-import { LONG_CLOCK, SURFACES, ask, create, inAgent, loops, mount, prompts, setStatus, spawn, startSession, stepOrder, taskTools, textOf } from './kit'
+import {
+  LONG_CLOCK,
+  SURFACES,
+  ask,
+  create,
+  inAgent,
+  loops,
+  mount,
+  prompts,
+  setStatus,
+  spawn,
+  startSession,
+  stepOrder,
+  taskTools,
+  textOf,
+} from './kit'
 
 describe('plan', () => {
   test('shows the task list as the plan, with progress and the step in progress', async ($, on) => {
@@ -143,7 +158,7 @@ describe('layout', () => {
     mock.clock(on)
     const ui = await mount($)
 
-    const headings = (await ui.findAll({ type: 'Box' })).map(box => box.key).filter(key => key?.endsWith('-heading'))
+    const headings = (await ui.findAll({ type: 'Box' })).map(box => box.key).filter(key => key?.endsWith('-heading') === true)
     expect(headings).toEqual(['now-heading', 'plan-heading', 'agents-heading', 'sessions-heading'])
   })
 

@@ -12,10 +12,21 @@ import { FEED_KEPT, TAIL_BYTES, callLine, drillSection, isShownText, parseTransc
 import { FORM_ROWS, composerSection, helpSection, keySection, selfSection } from './keys'
 import { applyUpdate, nowSection, parentFrom, planLines, planSection, planTitle, planUnits, rowCount } from './plan'
 import type { StepUpdate } from './plan'
-import { HEARTBEAT_MS, REMOTE_KEPT, SHARED_TASK, STALE_MS, isReachable, isSessionBusy, isShared, parseSessions, sessionSection, sortSessions } from './sessions'
+import {
+  HEARTBEAT_MS,
+  REMOTE_KEPT,
+  SHARED_TASK,
+  STALE_MS,
+  isReachable,
+  isSessionBusy,
+  isShared,
+  parseSessions,
+  sessionSection,
+  sortSessions,
+} from './sessions'
 import { PANE, runtime } from './state'
 import type { Toggle } from './state'
-import { FRAME_MS, describeCall, fit, spin, wrap } from './text'
+import { FRAME_MS, describeCall, firstLine, fit, isRecord, spin, wrap } from './text'
 import type { View } from './view'
 
 // Who counts as asking: the person, typing or through Remote Control or the
@@ -41,8 +52,7 @@ const PLAN_TOOLS: ReadonlySet<string> = new Set(['TaskCreate', 'TaskUpdate', 'Ta
 
 // One line in the system prompt, sent while the task tools are on offer, so
 // Claude files a sub-step under its step.
-const SUB_STEP_NOTE =
-  "When a task you create with TaskCreate is a sub-step of another task, set metadata.parent to that task's id."
+const SUB_STEP_NOTE = "When a task you create with TaskCreate is a sub-step of another task, set metadata.parent to that task's id."
 
 const focus = atom({ plugin: 'glimt', key: 'focus' } as const, null)
 const plan = atom({ plugin: 'glimt', key: 'plan' } as const, null)
@@ -80,7 +90,8 @@ export const register: Register = on => {
     $.clock.every(POLL_MS, () => void readRemote($).catch(() => undefined))
     void openPane($).catch(() => undefined)
     runtime.home = (await $.env.get('HOME').catch(() => undefined)) ?? ''
-    runtime.configDir = (await $.env.get('CLAUDE_CONFIG_DIR').catch(() => undefined)) || `${runtime.home}/.claude`
+    const configured = await $.env.get('CLAUDE_CONFIG_DIR').catch(() => undefined)
+    runtime.configDir = configured !== undefined && configured !== '' ? configured : `${runtime.home}/.claude`
     await learnSelf($)
     void readSessions($, true).catch(() => undefined)
     await seedSteps($).catch(() => undefined)
@@ -132,7 +143,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('prompt.compose', async ($, e, next) => {
+  on('prompt.compose', async (_$, e, next) => {
     const composed = await next(e)
     if (!e.tools.includes('TaskCreate')) {
       return composed
@@ -155,7 +166,7 @@ export const register: Register = on => {
       return <Box />
     }
 
-    const input = (typeof e.props.input === 'object' && e.props.input !== null ? e.props.input : {}) as Record<string, unknown>
+    const input = isRecord(e.props.input) ? e.props.input : {}
     const type = typeof input.subagent_type === 'string' ? input.subagent_type : 'Agent'
     const description = typeof input.description === 'string' ? input.description : ''
 
@@ -214,13 +225,9 @@ export const register: Register = on => {
     const agentId = e.agentId
     const state: AgentState = e.reason === 'answer' ? 'done' : e.reason === 'aborted' ? 'stopped' : 'failed'
     if (agentId === undefined) {
-      await update($, focus, f =>
-        f === null ? f : { ...f, endedAt: at, outcome: state, tool: undefined, doing: undefined },
-      )
+      await update($, focus, f => (f === null ? f : { ...f, endedAt: at, outcome: state, tool: undefined, doing: undefined }))
     } else {
-      await update($, agents, list =>
-        list.map(a => (a.agentId === agentId ? { ...a, state, endedAt: at, tool: undefined, doing: undefined } : a)),
-      )
+      await update($, agents, list => list.map(a => (a.agentId === agentId ? { ...a, state, endedAt: at, tool: undefined, doing: undefined } : a)))
       await readAgentFeed($, agentId).catch(() => undefined)
     }
     await update($, now, () => at)
@@ -273,12 +280,10 @@ export const register: Register = on => {
   // pane's own calls (TaskList, TaskGet) never pass its own hooks.
   on('tool.call', async ($, e, next) => {
     const agentId = e.agentId
-    const tool = String(e.tool)
+    const tool = e.tool
     const doing = describeCall(e)
     if (agentId === undefined) {
-      await update($, focus, f =>
-        f === null || !isTurnRunning(f) ? f : { ...f, tools: (f.tools ?? 0) + 1, tool, doing },
-      )
+      await update($, focus, f => (f === null || !isTurnRunning(f) ? f : { ...f, tools: (f.tools ?? 0) + 1, tool, doing }))
       try {
         return await next(e)
       } finally {
@@ -288,17 +293,13 @@ export const register: Register = on => {
 
     runtime.isBusy = true
     await update($, agents, list =>
-      list.map(a =>
-        a.agentId === agentId ? { ...a, state: 'running', endedAt: undefined, tools: a.tools + 1, tool, doing } : a,
-      ),
+      list.map(a => (a.agentId === agentId ? { ...a, state: 'running', endedAt: undefined, tools: a.tools + 1, tool, doing } : a)),
     )
     await readAgentFeed($, agentId).catch(() => undefined)
     try {
       return await next(e)
     } finally {
-      await update($, agents, list =>
-        list.map(a => (a.agentId === agentId && a.tool === tool ? { ...a, tool: undefined, doing: undefined } : a)),
-      )
+      await update($, agents, list => list.map(a => (a.agentId === agentId && a.tool === tool ? { ...a, tool: undefined, doing: undefined } : a)))
       await readAgentFeed($, agentId).catch(() => undefined)
     }
   })
@@ -346,9 +347,7 @@ export const register: Register = on => {
     }
     const at = await $.clock.now()
     // A subagent's task the pane never saw made is none of the plan's.
-    await update($, steps, list =>
-      owner.prefix !== '' && !list.some(step => step.id === change.taskId) ? list : applyUpdate(list, change, at),
-    )
+    await update($, steps, list => (owner.prefix !== '' && !list.some(step => step.id === change.taskId) ? list : applyUpdate(list, change, at)))
 
     return ran
   })
@@ -380,8 +379,13 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'ExitPlanMode' }, async ($, e, next) => {
     const ran = await next(e)
-    if (e.agentId === undefined && ran.deny === undefined && !ran.isError && ran.result.plan) {
-      const approved: Plan = { title: planTitle(ran.result.plan), path: ran.result.filePath }
+    if (e.agentId !== undefined || ran.deny !== undefined || ran.isError) {
+      return ran
+    }
+
+    const text = ran.result.plan
+    if (text !== null && text !== '') {
+      const approved: Plan = { title: planTitle(text), path: ran.result.filePath }
       await update($, plan, () => approved)
     }
 
@@ -539,16 +543,12 @@ export const register: Register = on => {
 
     // Before anything has happened, one quiet line says what will show here.
     const isEmpty =
-      list.length === 0 &&
-      team.length === 0 &&
-      request?.startedAt === undefined &&
-      others?.length === 0 &&
-      (await read($, sessionsError)) === null
+      list.length === 0 && team.length === 0 && request?.startedAt === undefined && others?.length === 0 && (await read($, sessionsError)) === null
     if (isEmpty) {
       runtime.toggles = [{ key: 'toggle-self', target: 'self' }]
       const footer = formNode ?? keys?.node
       return (
-        <Box flexDirection="column" width={view.columns} height={rows}>
+        <Box flexDirection="column" width={view.columns} {...(rows === undefined ? {} : { height: rows })}>
           {header.node}
           <Box key="empty" flexDirection="column" marginTop={1}>
             {wrap('glimt · the plan, agents and other sessions show here as they start', view.columns).map(text => (
@@ -565,7 +565,7 @@ export const register: Register = on => {
       )
     }
 
-    const share = (part: number) => (rows === undefined ? Infinity : Math.max(3, Math.floor(rows * part)))
+    const shareOf = (part: number) => (rows === undefined ? Infinity : Math.max(3, Math.floor(rows * part)))
     const current = nowSection(view, list)
     const units = planUnits(list, open, view.columns)
     // The footer: the form while one is open, else the keys while they show.
@@ -579,9 +579,17 @@ export const register: Register = on => {
         ? 0
         : Math.max(
             0,
-            rows - header.rows - current.rows - 1 - Math.max(1, rowCount(units.flat())) - share(AGENT_SHARE) - share(SESSION_SHARE) - 4 - footerRows,
+            rows -
+              header.rows -
+              current.rows -
+              1 -
+              Math.max(1, rowCount(units.flat())) -
+              shareOf(AGENT_SHARE) -
+              shareOf(SESSION_SHARE) -
+              4 -
+              footerRows,
           )
-    const crew = agentSection(view, mainAgent(request), team, open, share(AGENT_SHARE) + spare)
+    const crew = agentSection(view, mainAgent(request), team, open, shareOf(AGENT_SHARE) + spare)
     const listing = sessionSection(
       view,
       {
@@ -594,12 +602,11 @@ export const register: Register = on => {
         asked: await read($, stopping),
         answer: isYes => void answerStop($, isYes),
       },
-      share(SESSION_SHARE) + spare - Math.max(0, crew.rows - share(AGENT_SHARE)),
+      shareOf(SESSION_SHARE) + spare - Math.max(0, crew.rows - shareOf(AGENT_SHARE)),
     )
     // Left for the plan: less this session's rows, its own heading, the blank
     // row above each section, and the footer.
-    const planRoom =
-      rows === undefined ? Infinity : Math.max(1, rows - header.rows - 1 - current.rows - crew.rows - listing.rows - 4 - footerRows)
+    const planRoom = rows === undefined ? Infinity : Math.max(1, rows - header.rows - 1 - current.rows - crew.rows - listing.rows - 4 - footerRows)
     const lines = planLines(units, planRoom)
     runtime.toggles = [
       { key: 'toggle-self', target: 'self' },
@@ -612,7 +619,7 @@ export const register: Register = on => {
     // and going change the gap above them, never where they stand.
     const footer = formNode ?? keys?.node
     return (
-      <Box flexDirection="column" width={view.columns} height={rows}>
+      <Box flexDirection="column" width={view.columns} {...(rows === undefined ? {} : { height: rows })}>
         {header.node}
         <Box flexDirection="column" marginTop={1}>
           {current.node}
@@ -641,8 +648,8 @@ export const register: Register = on => {
 // leaves the keyboard alone; opened by /glimt it takes the keyboard.
 async function openPane($: EngineInterface, isAsked = false) {
   const pane = { id: PANE, title: 'glimt' }
-  const opened = await $.ui.open(isAsked ? { ...pane, focus: true as const } : pane)
-  await update($, isShown, () => opened.isPlaced)
+  const shown = await $.ui.open(isAsked ? { ...pane, focus: true as const } : pane)
+  await update($, isShown, () => shown.isPlaced)
 }
 
 // A resumed session already holds a task list: read it once, so the plan
@@ -654,9 +661,7 @@ async function seedSteps($: EngineInterface) {
   }
 
   const tasks = listed.result.tasks
-  await update($, steps, list =>
-    list.length > 0 ? list : tasks.map(task => ({ id: task.id, subject: task.subject, status: task.status })),
-  )
+  await update($, steps, list => (list.length > 0 ? list : tasks.map(task => ({ id: task.id, subject: task.subject, status: task.status }))))
 }
 
 // Whose task list a call changes. The main loop's is the plan itself. A
@@ -849,7 +854,7 @@ async function remoteFeed($: EngineInterface, sessionId: string, agentId: string
 async function tailFeed($: EngineInterface, path: string, isSubagent: boolean): Promise<Feed> {
   const ran = await $.process.run(['tail', '-c', String(TAIL_BYTES), path], { timeoutMs: 5000 })
   if (ran.exitCode !== 0) {
-    return { items: [], error: ran.stderr.trim().split('\n')[0] || 'Could not read the transcript.' }
+    return { items: [], error: firstLine(ran.stderr) ?? 'Could not read the transcript.' }
   }
 
   return { items: parseTranscript(ran.stdout, isSubagent) }
@@ -892,12 +897,12 @@ async function remoteAgentsOf($: EngineInterface, s: Session): Promise<RemoteLis
     const id = /^agent-(.+)\.jsonl$/.exec(entry.name)?.[1]
     return entry.kind === 'file' && id !== undefined ? [{ id, writtenAt: entry.mtimeMs }] : []
   })
-  const agents: RemoteAgent[] = []
-  for (const file of [...files].sort((a, b) => b.writtenAt - a.writtenAt).slice(0, REMOTE_KEPT)) {
-    agents.push({ ...file, ...(await metaOf($, `${dir}/agent-${file.id}.meta.json`)) })
+  const found: RemoteAgent[] = []
+  for (const file of files.toSorted((a, b) => b.writtenAt - a.writtenAt).slice(0, REMOTE_KEPT)) {
+    found.push({ ...file, ...(await metaOf($, `${dir}/agent-${file.id}.meta.json`)) })
   }
 
-  return { agents, total: files.length }
+  return { agents: found, total: files.length }
 }
 
 async function subagentsDir($: EngineInterface, s: Session): Promise<string | null> {
@@ -916,7 +921,7 @@ async function metaOf($: EngineInterface, path: string): Promise<{ type: string;
   let fields: Record<string, unknown> = {}
   try {
     const parsed: unknown = text === undefined ? undefined : JSON.parse(text)
-    fields = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : {}
+    fields = isRecord(parsed) ? parsed : {}
   } catch {
     // A meta file being written reads as none; the next read tries again.
   }
@@ -1009,7 +1014,7 @@ async function readSessions($: EngineInterface, isAsked: boolean) {
 
   const ran = await $.process.run(['claude', 'agents', '--json'], { timeoutMs: 10_000 }).catch(() => undefined)
   if (ran === undefined || ran.exitCode !== 0) {
-    const why = ran?.stderr.trim().split('\n')[0] || 'Could not run claude agents --json'
+    const why = firstLine(ran?.stderr) ?? 'Could not run claude agents --json'
     await update($, sessionsError, () => why)
     return
   }
@@ -1072,7 +1077,15 @@ async function share($: EngineInterface) {
   const at = await $.clock.now()
   const running: SharedAgent[] = (await read($, agents))
     .filter(a => a.state === 'running')
-    .map(a => ({ id: a.id, type: a.type, description: a.description, task: fit(a.task, SHARED_TASK), startedAt: a.startedAt, tools: a.tools, tool: a.tool }))
+    .map(a => ({
+      id: a.id,
+      type: a.type,
+      description: a.description,
+      task: fit(a.task, SHARED_TASK),
+      startedAt: a.startedAt,
+      tools: a.tools,
+      tool: a.tool,
+    }))
   const text = JSON.stringify(running)
   if (text !== runtime.lastShared || at - runtime.lastSharedAt >= HEARTBEAT_MS) {
     await $.store.set(`agents:${id}`, { at, agents: running })
@@ -1094,9 +1107,7 @@ async function recordAgent($: EngineInterface, spawned: Spawned) {
   const at = await $.clock.now()
   const spawner = (await read($, agents)).find(a => a.agentId !== undefined && a.agentId === spawned.parentId)
   const stepId =
-    spawner !== undefined
-      ? spawner.stepId
-      : (await read($, steps)).find(step => step.status === 'in_progress' && !step.id.includes('/'))?.id
+    spawner !== undefined ? spawner.stepId : (await read($, steps)).find(step => step.status === 'in_progress' && !step.id.includes('/'))?.id
   const agent: Agent = {
     id: spawned.agentId ?? `${spawned.fallbackId}@${at}`,
     agentId: spawned.agentId,
@@ -1158,8 +1169,8 @@ async function spawnAgent($: EngineInterface, task: string, where: 'here' | 'ses
   }
 
   const cwd = await $.session.cwd().catch(() => undefined)
-  const ran = await $.process.run(['claude', '--bg', text], { cwd, timeoutMs: 30_000 }).catch(() => undefined)
-  const why = ran?.stderr.trim().split('\n')[0] || 'claude --bg did not run'
+  const ran = await $.process.run(['claude', '--bg', text], { ...(cwd === undefined ? {} : { cwd }), timeoutMs: 30_000 }).catch(() => undefined)
+  const why = firstLine(ran?.stderr) ?? 'claude --bg did not run'
   $.ui.toast(ran?.exitCode === 0 ? `Started a background session ${ran.stdout.trim()}` : `The session did not start: ${why}`)
   await readSessions($, true)
 }
@@ -1222,7 +1233,7 @@ async function answerStop($: EngineInterface, isYes: boolean) {
   }
 
   const ran = await $.process.run(['claude', 'stop', s.id], { timeoutMs: 15_000 }).catch(() => undefined)
-  const why = ran?.stderr.trim().split('\n')[0] || 'claude stop did not run'
+  const why = firstLine(ran?.stderr) ?? 'claude stop did not run'
   $.ui.toast(ran?.exitCode === 0 ? `Stopped ${s.name}` : `Could not stop ${s.name}: ${why}`)
   await readSessions($, true)
 }
@@ -1241,9 +1252,7 @@ async function sendMessage($: EngineInterface, to: { sessionId: string } | { age
     return
   }
 
-  const sent = await $.session
-    .send({ to, text: text.trim() })
-    .catch((error: unknown) => ({ isDelivered: false as const, reason: String(error) }))
+  const sent = await $.session.send({ to, text: text.trim() }).catch((error: unknown) => ({ isDelivered: false as const, reason: String(error) }))
   $.ui.toast(sent.isDelivered ? `Sent to ${name}` : `Not sent to ${name}: ${sent.reason}`)
 }
 

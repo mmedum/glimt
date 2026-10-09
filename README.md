@@ -7,7 +7,7 @@
 
 A quiet side pane for Claude Code: what this session is doing, its plan, its agents, and every other session.
 
-*glimt* is Danish for a glimpse, a brief flash of light. Say it like *glimpse* without the *-pse*: GLIMT, with a short *i*.
+_glimt_ is Danish for a glimpse, a brief flash of light. Say it like _glimpse_ without the _-pse_: GLIMT, with a short _i_.
 
 ![glimt beside a session: this session, Now, the plan with its steps, two agents at work, and three other sessions](docs/screenshot.png)
 
@@ -27,21 +27,21 @@ Third-party marketplaces don't update on their own. To update, run `claude plugi
 
 The keys work while the pane holds the keyboard: open it with `/glimt`, click it, or press ctrl+x tab. The key row shows the keys that apply to the selected row; `i` lists them all.
 
-| Key | Does |
-| --- | --- |
-| `j` `k` | move down and up (↓ ↑ and Tab work too) |
-| `l` | go into an agent or a session: its task and live activity |
-| `h` | back out, one level at a time |
-| `o` | open or close the row: a step's description, an agent's task, a session's agents |
-| `n` | new agent here |
-| `s` | new background session (`claude --bg`), from the `i` list |
-| `r` | rename this session, or another session running glimt |
-| `c` | clear this conversation, after asking |
-| `m` | write to the agent or session you are in |
-| `a` | copy a background session's `claude attach` command |
-| `x` | stop a background session, after asking |
-| `i` | all keys |
-| `q` | close the pane, from the `i` list |
+| Key     | Does                                                                             |
+| ------- | -------------------------------------------------------------------------------- |
+| `j` `k` | move down and up (↓ ↑ and Tab work too)                                          |
+| `l`     | go into an agent or a session: its task and live activity                        |
+| `h`     | back out, one level at a time                                                    |
+| `o`     | open or close the row: a step's description, an agent's task, a session's agents |
+| `n`     | new agent here                                                                   |
+| `s`     | new background session (`claude --bg`), from the `i` list                        |
+| `r`     | rename this session, or another session running glimt                            |
+| `c`     | clear this conversation, after asking                                            |
+| `m`     | write to the agent or session you are in                                         |
+| `a`     | copy a background session's `claude attach` command                              |
+| `x`     | stop a background session, after asking                                          |
+| `i`     | all keys                                                                         |
+| `q`     | close the pane, from the `i` list                                                |
 
 A spinner marks whatever is working right now: a running agent, a working session, the step in progress while Claude is on it. The rest keep still marks: `◉` waiting for you, `○` idle, `✓` done, `✗` failed, `■` stopped.
 
@@ -65,7 +65,7 @@ It can't switch this terminal to another session: Claude Code offers mods no way
 
 Questions and bugs: [open an issue](https://github.com/mmedum/glimt/issues). For a pull request, open an issue first.
 
-Run the tests with `claude plugin test .` and check the manifests with `claude plugin validate --strict .`. Claude Code writes the API types into `.claude-plugin/types/` when it loads the mod (`claude -p --plugin-dir . /glimt` does it without a session); after that, `tsc -p .` type-checks it.
+Run the tests with `claude plugin test .` and check the manifests with `claude plugin validate --strict .`. Format with `npx oxfmt` and lint with `npx -p oxlint -p oxlint-tsgolint oxlint --type-aware hooks tests`; CI pins the versions. Claude Code writes the API types into `.claude-plugin/types/` when it loads the mod (`claude -p --plugin-dir . /glimt` does it without a session); after that, `tsc -p .` type-checks it.
 
 To release: bump `version` in `.claude-plugin/plugin.json` (installed copies only update when it changes), add the version's section to `CHANGELOG.md`, then tag `vX.Y.Z` and publish a GitHub Release with that section.
 

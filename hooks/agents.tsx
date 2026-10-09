@@ -17,7 +17,14 @@ export const NARROW = 50
 // leave less is shortened.
 export const MIN_TITLE = 12
 
-export type Spawned = { agentId?: string; fallbackId: string; parentId?: string; type: string; description: string; task: string }
+export type Spawned = {
+  agentId?: string | undefined
+  fallbackId: string
+  parentId?: string | undefined
+  type: string
+  description: string
+  task: string
+}
 
 export function isTurnRunning(request: Focus | null): boolean {
   return request?.startedAt !== undefined && request.endedAt === undefined
@@ -142,7 +149,12 @@ export function agentLines(view: View, node: AgentNode, open: readonly string[],
     lines.push(on === '' ? `⎿ ${tool}` : `⎿ ${tool} · ${on}`)
   }
   const isOpen = !node.isMain && open.includes(`agent:${agent.id}`)
-  const task = isOpen ? clip(agent.task.split('\n').flatMap(paragraph => wrap(paragraph, width)), TASK_LINES) : []
+  const task = isOpen
+    ? clip(
+        agent.task.split('\n').flatMap(paragraph => wrap(paragraph, width)),
+        TASK_LINES,
+      )
+    : []
 
   return { under, status: lines, task: isOpen && task.length === 0 ? ['No task text.'] : task }
 }
@@ -206,7 +218,7 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
   // first; then the ⎿ lines; only then running agents.
   while (rowsOf(nodes) > limit(nodes.length)) {
     const leaves = nodes.filter(node => !node.isMain && node.agent.state !== 'running' && !node.hasChildren)
-    const oldest = leaves.sort((a, b) => (a.agent.endedAt ?? 0) - (b.agent.endedAt ?? 0))[0]
+    const oldest = leaves.toSorted((a, b) => (a.agent.endedAt ?? 0) - (b.agent.endedAt ?? 0))[0]
     if (oldest === undefined) {
       break
     }
@@ -253,12 +265,7 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
               <Box flexDirection="row">
                 {branch !== '' && <Text dimColor>{branch}</Text>}
                 {!isMain && (
-                  <Button
-                    key={`toggle-agent-${a.id}`}
-                    plain
-                    label={task.length > 0 ? '▾' : '▸'}
-                    onPress={() => view.toggle(`agent:${a.id}`)}
-                  />
+                  <Button key={`toggle-agent-${a.id}`} plain label={task.length > 0 ? '▾' : '▸'} onPress={() => view.toggle(`agent:${a.id}`)} />
                 )}
                 {!isMain && <Text> </Text>}
                 <Box flexGrow={1}>

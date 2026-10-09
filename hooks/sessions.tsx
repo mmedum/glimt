@@ -4,7 +4,7 @@
 import type { RemoteAgent, RemoteList, Session, Shared, SharedAgent } from '../types'
 import { TASK_LINES } from './agents'
 import { runtime } from './state'
-import { cells, clip, fit, fitStart, minutes, spin, toolName, wrap } from './text'
+import { cells, clip, fit, fitStart, isRecord, minutes, spin, toolName, wrap } from './text'
 import { heading } from './view'
 import type { View } from './view'
 
@@ -38,7 +38,7 @@ export function isShared(value: unknown): value is Shared {
 export function sortSessions(list: Session[]): Session[] {
   const rank = (s: Session) => (s.state === 'blocked' ? 0 : isSessionBusy(s) ? 1 : 2)
 
-  return [...list].sort((a, b) => rank(a) - rank(b))
+  return list.toSorted((a, b) => rank(a) - rank(b))
 }
 
 // The sessions in what `claude agents --json` printed; an entry with no
@@ -50,7 +50,7 @@ export function parseSessions(value: unknown): Session[] {
 
   const text = (field: unknown) => (typeof field === 'string' ? field : undefined)
   return value.flatMap((item: unknown) => {
-    const fields = typeof item === 'object' && item !== null ? (item as Record<string, unknown>) : {}
+    const fields = isRecord(item) ? item : {}
     const sessionId = text(fields.sessionId)
     if (sessionId === undefined) {
       return []
@@ -105,9 +105,7 @@ export function sessionSection(view: View, listing: Listing, room: number) {
   const all = list ?? []
   const waiting = all.filter(s => s.state === 'blocked').length
   const working = all.filter(isSessionBusy).length
-  const count = [waiting > 0 ? `${waiting} waiting` : '', working > 0 ? `${working} working` : '']
-    .filter(part => part !== '')
-    .join(' · ')
+  const count = [waiting > 0 ? `${waiting} waiting` : '', working > 0 ? `${working} working` : ''].filter(part => part !== '').join(' · ')
 
   const sharedOf = (s: Session) => listing.shared[s.sessionId]?.agents ?? []
   const crews = new Map(
@@ -187,9 +185,7 @@ export function sessionSection(view: View, listing: Listing, room: number) {
                   <Text dimColor={word === 'idle'}>
                     {' '}
                     <Text color={color}>{mark}</Text>{' '}
-                    <Text inverse={view.cursor === `toggle-session-${s.sessionId}`}>
-                      {fit(s.name, view.columns - 4 - cells(tally) - 1)}
-                    </Text>
+                    <Text inverse={view.cursor === `toggle-session-${s.sessionId}`}>{fit(s.name, view.columns - 4 - cells(tally) - 1)}</Text>
                   </Text>
                 </Box>
                 <Text dimColor> {tally}</Text>
@@ -265,7 +261,13 @@ export function remoteSection(view: View, s: Session, state: RemoteState) {
     const share = shared.find(one => one.id === a.id)
     const target = `remote:${sid}:${a.id}`
     const text = tasks[`${sid}:${a.id}`] ?? share?.task
-    const task = !open.includes(target) ? [] : text === undefined ? ['Loading…'] : text === '' ? ['No task text.'] : clip(wrap(text, view.columns - 7), TASK_LINES)
+    const task = !open.includes(target)
+      ? []
+      : text === undefined
+        ? ['Loading…']
+        : text === ''
+          ? ['No task text.']
+          : clip(wrap(text, view.columns - 7), TASK_LINES)
     return {
       a,
       target,

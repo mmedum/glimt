@@ -11,7 +11,7 @@ export type InputElement = ElementTable<'terminal' | 'desktop'>['Input']
 // what pressing a toggle does.
 export type View = {
   ui: Ui
-  Input?: InputElement
+  Input?: InputElement | undefined
   columns: number
   at: number
   isTurnRunning: boolean

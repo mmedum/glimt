@@ -11,12 +11,12 @@ export const INDENT = 2
 
 export type StepUpdate = {
   taskId: string
-  subject?: string
-  description?: string
-  activeForm?: string
-  status?: StepStatus | 'deleted'
+  subject?: string | undefined
+  description?: string | undefined
+  activeForm?: string | undefined
+  status?: StepStatus | 'deleted' | undefined
   // A new parent, or null to make it a step of its own.
-  parent?: string | null
+  parent?: string | null | undefined
 }
 
 // A line of the plan as drawn: a step at its depth under the top level, with
@@ -178,7 +178,10 @@ export function detailLines(step: Step, width: number): string[] {
 
 // The plan's first heading, or its first line when it has none.
 export function planTitle(text: string): string {
-  const lines = text.split('\n').map(line => line.trim()).filter(line => line !== '')
+  const lines = text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line !== '')
   const title = lines.find(line => line.startsWith('#')) ?? lines[0] ?? 'Plan'
 
   return title.replace(/^#+\s*/, '')
@@ -201,9 +204,7 @@ export function nowSection(view: View, list: Step[]) {
           {active.length === 0 ? (
             <Text dimColor>No step in progress.</Text>
           ) : (
-            active.map(step => (
-              <Text color="claude">{fit(`${mark} ${step.activeForm ?? step.subject}`, view.columns)}</Text>
-            ))
+            active.map(step => <Text color="claude">{fit(`${mark} ${step.activeForm ?? step.subject}`, view.columns)}</Text>)
           )}
         </Box>
       </Box>

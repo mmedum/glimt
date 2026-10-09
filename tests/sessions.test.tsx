@@ -15,7 +15,14 @@ describe('sessions', () => {
   })
 
   test('writes a running time by the minute: <1m below a minute, then minutes, then hours', async ($, on) => {
-    const startedAgo = (age: number, id: string) => ({ cwd: '/tmp', kind: 'interactive', startedAt: 3_600_000 - age, sessionId: id, name: id, status: 'idle' })
+    const startedAgo = (age: number, id: string) => ({
+      cwd: '/tmp',
+      kind: 'interactive',
+      startedAt: 3_600_000 - age,
+      sessionId: id,
+      name: id,
+      status: 'idle',
+    })
     await machine($, on, { listed: [startedAgo(59_999, 's1'), startedAgo(60_000, 's2'), startedAgo(3_599_999, 's3'), startedAgo(3_600_000, 's4')] })
     const ui = await mount($)
 
@@ -70,6 +77,13 @@ describe('sessions', () => {
     const ui = await mount($)
 
     expect(await textOf(ui, 'sessions-error')).toBe('error: agent view is off')
+  })
+
+  test('says it could not run claude agents when it fails without a word', async ($, on) => {
+    await machine($, on, { listFails: true })
+    const ui = await mount($)
+
+    expect(await textOf(ui, 'sessions-error')).toBe('Could not run claude agents --json')
   })
 
   test('shows an error when claude agents prints something other than a list', async ($, on) => {

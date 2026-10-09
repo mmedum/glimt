@@ -4,7 +4,7 @@
 import type { Activity, Agent, Feed, Opened, RemoteAgent, RemoteList, Session, SharedAgent } from '../types'
 import { AGENT_MARK, agentTally, runningMark } from './agents'
 import { isReachable, isRemoteActive, placeOf, remoteSection, remoteTally, sessionMark } from './sessions'
-import { cells, clip, describeCall, fit, fitStart, minutes, spin, toolName, wrap } from './text'
+import { cells, clip, describeCall, fit, fitStart, isRecord, minutes, spin, toolName, wrap } from './text'
 import { heading, keyButton, keyWidth, wrappedRows } from './view'
 import type { View } from './view'
 
@@ -27,19 +27,19 @@ export function parseTranscript(text: string, isSubagent = false): Activity[] {
     } catch {
       return []
     }
-    if (typeof entry !== 'object' || entry === null) {
+    if (!isRecord(entry)) {
       return []
     }
 
-    const { type, message, isSidechain, isMeta } = entry as Record<string, unknown>
+    const { type, message, isSidechain, isMeta } = entry
     if ((isSidechain === true && !isSubagent) || isMeta === true || (type !== 'user' && type !== 'assistant')) {
       return []
     }
-    const content = typeof message === 'object' && message !== null ? (message as { content?: unknown }).content : undefined
+    const content = isRecord(message) ? message.content : undefined
     const blocks: unknown[] = typeof content === 'string' ? [{ type: 'text', text: content }] : Array.isArray(content) ? content : []
 
     return blocks.flatMap((block): Activity[] => {
-      const fields = typeof block === 'object' && block !== null ? (block as Record<string, unknown>) : {}
+      const fields = isRecord(block) ? block : {}
       if (fields.type === 'text' && typeof fields.text === 'string' && isShownText(fields.text)) {
         return [{ kind: type === 'user' ? 'asked' : 'said', text: fields.text.trim() }]
       }
@@ -146,7 +146,10 @@ export function drillSection(view: View, drill: Drill) {
       ? []
       : taskText === undefined
         ? ['Loading…']
-        : clip(taskText.split('\n').flatMap(paragraph => wrap(paragraph, width - 2)), TASK_SHOWN)
+        : clip(
+            taskText.split('\n').flatMap(paragraph => wrap(paragraph, width - 2)),
+            TASK_SHOWN,
+          )
   const crew =
     into.kind === 'session' && session !== undefined
       ? remoteSection(view, session, { list: drill.remote, shared, tasks: drill.tasks, open: drill.open })
@@ -154,7 +157,9 @@ export function drillSection(view: View, drill: Drill) {
   const isAsking = into.kind === 'session' && session !== undefined && asked === session.sessionId
 
   const canMessage =
-    Input !== undefined && !isGone && (into.kind === 'session' || (into.kind === 'agent' && agent?.state === 'running' && agent.agentId !== undefined))
+    Input !== undefined &&
+    !isGone &&
+    (into.kind === 'session' || (into.kind === 'agent' && agent?.state === 'running' && agent.agentId !== undefined))
   const canWalk = crew !== undefined && crew.toggles.length > 0
   const canReach = into.kind === 'session' && session !== undefined && isReachable(session)
   const canRename = into.kind === 'session' && session !== undefined && drill.isSharing
@@ -198,7 +203,15 @@ export function drillSection(view: View, drill: Drill) {
         { width: keyWidth('keys'), node: keyButton(view, 'help', 'i', 'keys', act.help) },
       ]
     : undefined
-  const keyRows = keyItems === undefined ? 0 : 1 + wrappedRows(keyItems.map(item => item.width), width, 3)
+  const keyRows =
+    keyItems === undefined
+      ? 0
+      : 1 +
+        wrappedRows(
+          keyItems.map(item => item.width),
+          width,
+          3,
+        )
 
   // The activity takes the rows the rest leaves: the way back and a blank,
   // the title and its lines, a session's agents or an agent's task under a
@@ -245,7 +258,12 @@ export function drillSection(view: View, drill: Drill) {
         </Box>
         {crew !== undefined && (
           <Box key="drill-agents" flexDirection="column" marginTop={1}>
-            {heading(view, 'drill-agents-heading', 'Agents', drill.remote === undefined || drill.remote.total === 0 ? '' : String(drill.remote.total))}
+            {heading(
+              view,
+              'drill-agents-heading',
+              'Agents',
+              drill.remote === undefined || drill.remote.total === 0 ? '' : String(drill.remote.total),
+            )}
             {crew.node}
           </Box>
         )}
@@ -323,7 +341,7 @@ export function itemLines(item: Activity, width: number): string[] {
 export function lastItems(items: Activity[], width: number, room: number): { item: Activity; lines: string[] }[] {
   const shown: { item: Activity; lines: string[] }[] = []
   let used = 0
-  for (const item of [...items].reverse()) {
+  for (const item of items.toReversed()) {
     const lines = itemLines(item, width)
     if (used + lines.length > room) {
       if (shown.length === 0) {

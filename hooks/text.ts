@@ -1,6 +1,10 @@
 // Text as the pane draws it: measured in cells, fitted, wrapped, and
 // times and counts written short.
 
+// The pane measures text in code points (see cells), so spreading a string
+// into its code points is how it is measured and cut here.
+/* oxlint-disable typescript/no-misused-spread */
+
 // The braille spinner the skins mod's spinner turns too, a frame every
 // FRAME_MS while something runs; the clock stands still when nothing does.
 // It turns only on what is working right now: a running agent, a working
@@ -28,7 +32,7 @@ export const CALL_FIELDS = ['command', 'file_path', 'notebook_path', 'path', 'pa
 
 // What a call is on, from the first of those fields it has: its first line.
 export function describeCall(input: object): string | undefined {
-  const fields = input as Record<string, unknown>
+  const fields = isRecord(input) ? input : {}
   for (const name of CALL_FIELDS) {
     const value = fields[name]
     if (typeof value === 'string' && value.trim() !== '') {
@@ -118,12 +122,12 @@ export function duration(ms: number): string {
     return `${seconds}s`
   }
 
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) {
-    return `${minutes}m${String(seconds % 60).padStart(2, '0')}s`
+  const wholeMinutes = Math.floor(seconds / 60)
+  if (wholeMinutes < 60) {
+    return `${wholeMinutes}m${String(seconds % 60).padStart(2, '0')}s`
   }
 
-  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, '0')}m`
+  return `${Math.floor(wholeMinutes / 60)}h${String(wholeMinutes % 60).padStart(2, '0')}m`
 }
 
 // A running time on a row, by the minute, so the row stands still: <1m, 4m,
@@ -140,4 +144,16 @@ export function minutes(ms: number): string {
 // mcp__server__tool reads as tool.
 export function toolName(tool: string): string {
   return tool.startsWith('mcp__') ? tool.split('__').slice(2).join('__') : tool
+}
+
+// A parsed JSON value's fields, when it is an object.
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+// The first line of what a process printed, or undefined when it printed none.
+export function firstLine(text: string | undefined): string | undefined {
+  const line = text?.trim().split('\n')[0]
+
+  return line === undefined || line === '' ? undefined : line
 }

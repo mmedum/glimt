@@ -4,6 +4,10 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Changed
+
+- The code is checked with the strictest TypeScript settings, linted with oxlint (type-aware) and formatted with oxfmt, in CI too. glimt behaves as before.
+
 ## [0.1.0] - 2026-10-09
 
 ### Added

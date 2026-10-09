@@ -21,3 +21,7 @@ jobs:
       # .claude-plugin/types/, which the type-check needs; it needs no sign-in.
       - run: claude -p --plugin-dir . /glimt
       - run: npx --yes -p typescript@7.0.2 tsc -p . --noEmit
+      - run: npx --yes oxfmt@0.72.0 --check
+      # oxlint's type-aware rules run on typescript-go: bump oxlint-tsgolint
+      # together with typescript above.
+      - run: npx --yes -p oxlint@1.87.0 -p oxlint-tsgolint@7.0.2003 oxlint --type-aware --deny-warnings hooks tests

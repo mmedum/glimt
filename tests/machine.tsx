@@ -12,7 +12,17 @@ import type { Mounted } from './kit'
 export const LISTED = [
   { pid: 65767, cwd: '/home/demo/code/docs', kind: 'interactive', startedAt: 60_000, sessionId: '1879e383-full', name: 'docs-site', status: 'idle' },
   { id: 'd3d04fc1', cwd: '/home/demo/code', kind: 'background', startedAt: 0, sessionId: 'd3d04fc1-full', name: 'release-notes', state: 'blocked' },
-  { pid: 50727, id: 'ba4f4809', cwd: '/home/demo/code', kind: 'background', startedAt: 0, sessionId: 'self-full', name: 'glimt work', status: 'busy', state: 'working' },
+  {
+    pid: 50727,
+    id: 'ba4f4809',
+    cwd: '/home/demo/code',
+    kind: 'background',
+    startedAt: 0,
+    sessionId: 'self-full',
+    name: 'glimt work',
+    status: 'busy',
+    state: 'working',
+  },
   { pid: 294443, cwd: '/srv/api', kind: 'interactive', startedAt: 0, sessionId: 'a15af547-full', name: 'api-refactor', status: 'busy' },
 ]
 
@@ -22,6 +32,8 @@ export type MachineOptions = {
   stdout?: string
   stderr?: string
   stopError?: string
+  // `claude agents --json` fails without a word.
+  listFails?: boolean
   placed?: boolean[]
   transcript?: string
   files?: string[]
@@ -42,7 +54,7 @@ export type MachineOptions = {
 // /home/demo and this session is "self-full". Starts the session.
 export async function machine($: Engine, on: On, options: MachineOptions = {}): Promise<Machine> {
   const { listed = LISTED, stdout, stderr = '', stopError = '', placed = [true], transcript = '', files = [], folders = [] } = options
-  const { dirs = {}, texts = {}, outputs = {}, stored = {}, selfId = { current: 'self-full' } } = options
+  const { dirs = {}, texts = {}, outputs = {}, stored = {}, selfId = { current: 'self-full' }, listFails = false } = options
   const seen = { ran: [] as string[][], toasts: [] as string[], copied: [] as string[] }
   const clock = mock.clock(on, { now: 3_600_000 })
   mock.env(on, { HOME: '/home/demo' })
@@ -83,7 +95,8 @@ export async function machine($: Engine, on: On, options: MachineOptions = {}): 
     const isList = e.argv[1] === 'agents'
     const error = isList ? stderr : stopError
     const printed = isList ? (stdout ?? JSON.stringify(listed)) : ''
-    return { value: { exitCode: error === '' ? 0 : 1, stdout: printed, stderr: error, isStdoutTruncated: false, isStderrTruncated: false } }
+    const failed = error !== '' || (isList && listFails)
+    return { value: { exitCode: failed ? 1 : 0, stdout: printed, stderr: error, isStdoutTruncated: false, isStderrTruncated: false } }
   })
   on('ui.toast', (_$, e) => {
     seen.toasts.push(e.text)
@@ -102,7 +115,9 @@ export async function machine($: Engine, on: On, options: MachineOptions = {}): 
 export const listReads = (ran: string[][]) => ran.filter(argv => argv.join(' ') === 'claude agents --json').length
 export const stops = (ran: string[][]) => ran.filter(argv => argv[1] === 'stop')
 export const sessionOrder = async (ui: Mounted) =>
-  (await ui.findAll({ type: 'Box' })).map(box => box.key).filter(key => key?.startsWith('session-') && !key.startsWith('session-detail-'))
+  (await ui.findAll({ type: 'Box' }))
+    .map(box => box.key)
+    .filter(key => key !== undefined && key.startsWith('session-') && !key.startsWith('session-detail-'))
 export const offered = async (ui: Mounted) =>
   (await ui.findAll({ type: 'Button' })).map(button => button.key).filter(key => key === 'key-attach' || key === 'key-stop')
 
@@ -126,7 +141,10 @@ export const TAIL = [
     { type: 'user', isMeta: true, message: { role: 'user', content: 'Caveat: the messages below were generated' } },
     { type: 'user', message: { role: 'user', content: '<command-name>/clear</command-name>' } },
     { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Running it now.' }] } },
-    { type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'npm test\n--watch' } }] } },
+    {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'npm test\n--watch' } }] },
+    },
     { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] } },
     { type: 'assistant', isSidechain: true, message: { role: 'assistant', content: [{ type: 'text', text: 'A subagent speaks' }] } },
     { type: 'attachment', attachment: { type: 'todo_reminder' } },
@@ -160,9 +178,19 @@ export const METAS = {
 // b1's own transcript: its task, a call and what it found.
 export const B1 = `${[
   { type: 'user', isSidechain: true, message: { role: 'user', content: 'Find where hooks are loaded.' } },
-  { type: 'assistant', isSidechain: true, message: { role: 'assistant', content: [{ type: 'tool_use', id: 'g1', name: 'Grep', input: { pattern: 'register' } }] } },
+  {
+    type: 'assistant',
+    isSidechain: true,
+    message: { role: 'assistant', content: [{ type: 'tool_use', id: 'g1', name: 'Grep', input: { pattern: 'register' } }] },
+  },
   { type: 'assistant', isSidechain: true, message: { role: 'assistant', content: [{ type: 'text', text: 'It is in hooks/load.ts.' }] } },
 ]
   .map(line => JSON.stringify(line))
   .join('\n')}\n`
-export const AGENTS_MACHINE: MachineOptions = { transcript: TAIL, files: [DOCS], dirs: AGENT_FILES, texts: METAS, outputs: { [`${SUBAGENTS}/agent-b1.jsonl`]: B1 } }
+export const AGENTS_MACHINE: MachineOptions = {
+  transcript: TAIL,
+  files: [DOCS],
+  dirs: AGENT_FILES,
+  texts: METAS,
+  outputs: { [`${SUBAGENTS}/agent-b1.jsonl`]: B1 },
+}

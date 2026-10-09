@@ -35,23 +35,23 @@ export function keySection(view: View, can: KeyContext, keys: Keys) {
   return {
     rows: wrappedRows([pair, pair, ...labels.map(keyWidth)], view.columns, 3),
     node: (
-    <Box key="keys" flexDirection="row" flexWrap="wrap" columnGap={3}>
-      <Box flexDirection="row" columnGap={1}>
-        {key('down', 'j', '↓', keys.down)}
-        {key('up', 'k', '↑', keys.up)}
+      <Box key="keys" flexDirection="row" flexWrap="wrap" columnGap={3}>
+        <Box flexDirection="row" columnGap={1}>
+          {key('down', 'j', '↓', keys.down)}
+          {key('up', 'k', '↑', keys.up)}
+        </Box>
+        <Box flexDirection="row" columnGap={1}>
+          {key('back', 'h', '←', keys.back)}
+          {key('into', 'l', '→', keys.into)}
+        </Box>
+        {can.canOpen && key('open', 'o', 'open', keys.open)}
+        {can.canRename && key('rename', 'r', 'rename', keys.rename)}
+        {can.canClear && key('clear', 'c', 'clear', keys.clear)}
+        {can.canReach && key('attach', 'a', 'attach', keys.attach)}
+        {can.canReach && key('stop', 'x', 'stop', keys.stop)}
+        {key('spawn', 'n', 'new', keys.spawn)}
+        {key('help', 'i', 'keys', keys.help)}
       </Box>
-      <Box flexDirection="row" columnGap={1}>
-        {key('back', 'h', '←', keys.back)}
-        {key('into', 'l', '→', keys.into)}
-      </Box>
-      {can.canOpen && key('open', 'o', 'open', keys.open)}
-      {can.canRename && key('rename', 'r', 'rename', keys.rename)}
-      {can.canClear && key('clear', 'c', 'clear', keys.clear)}
-      {can.canReach && key('attach', 'a', 'attach', keys.attach)}
-      {can.canReach && key('stop', 'x', 'stop', keys.stop)}
-      {key('spawn', 'n', 'new', keys.spawn)}
-      {key('help', 'i', 'keys', keys.help)}
-    </Box>
     ),
   }
 }
@@ -108,7 +108,12 @@ export function selfSection(view: View, state: SelfState) {
   const { session, isOpen, isClearing } = state
   // Until the session list names it, the row just says what it is.
   const name = session?.name
-  const where = session === undefined ? '' : runtime.home !== '' && session.cwd.startsWith(runtime.home) ? `~${session.cwd.slice(runtime.home.length)}` : session.cwd
+  const where =
+    session === undefined
+      ? ''
+      : runtime.home !== '' && session.cwd.startsWith(runtime.home)
+        ? `~${session.cwd.slice(runtime.home.length)}`
+        : session.cwd
 
   return {
     rows: 1 + (isOpen && session !== undefined ? 1 : 0) + (isClearing ? 1 : 0),

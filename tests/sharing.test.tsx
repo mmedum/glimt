@@ -7,7 +7,10 @@ describe('sharing between sessions', () => {
     loops(on)
     const { clock, store } = await machine($, on)
     await spawn($, 'a1', 'find loaders', { prompt: 'Find where hooks are loaded.' })
-    const sharedAt = () => (store.get('agents:self-full') as { at: number } | undefined)?.at
+    const sharedAt = () => {
+      const share = store.get('agents:self-full')
+      return typeof share === 'object' && share !== null && 'at' in share ? share.at : undefined
+    }
 
     await clock.advance(5_000)
     expect(store.get('agents:self-full')).toEqual({
@@ -33,7 +36,12 @@ describe('sharing between sessions', () => {
     // As just after a /clear: this session's new id is not in the list yet.
     const { store } = await machine($, on, {
       listed: LISTED.filter(s => s.sessionId !== 'self-full'),
-      stored: { 'agents:gone': { at: 3_600_000, agents: [] }, 'rename:gone': 'old', 'agents:self-full': { at: 3_600_000, agents: [] }, 'notes:gone': 1 },
+      stored: {
+        'agents:gone': { at: 3_600_000, agents: [] },
+        'rename:gone': 'old',
+        'agents:self-full': { at: 3_600_000, agents: [] },
+        'notes:gone': 1,
+      },
     })
 
     expect([...store.keys()]).toEqual(['agents:self-full', 'notes:gone'])

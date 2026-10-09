@@ -19,7 +19,7 @@ describe('actions', () => {
     expect(spawned).toEqual([{ prompt: 'check the build\nthen report', description: 'check the build' }])
     expect(await ui.find({ key: 'composer' })).toBeUndefined()
     // Core alone sets a started agent's id, so the row is found by what it says.
-    const rows = (await ui.findAll({ type: 'Box' })).filter(box => box.key?.startsWith('agent-'))
+    const rows = (await ui.findAll({ type: 'Box' })).filter(box => box.key?.startsWith('agent-') === true)
     expect(rows.map(row => row.text)).toEqual(['▸ ⠋ general-purpose check the build <1m · 0 tools'])
   })
 
@@ -69,7 +69,7 @@ describe('actions', () => {
     expect(renamed).toEqual(['mod for agents'])
   })
 
-  test("r on another session asks its glimt through the store, and is offered only where one shares", async ($, on) => {
+  test('r on another session asks its glimt through the store, and is offered only where one shares', async ($, on) => {
     const { store } = await machine($, on, { stored: { 'agents:1879e383-full': { at: 3_600_000, agents: [] } } })
     const ui = await onSession($, 1)
     expect(await ui.find({ key: 'key-rename' })).toBeUndefined()
