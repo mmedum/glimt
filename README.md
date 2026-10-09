@@ -17,7 +17,7 @@ _glimt_ is Danish for a glimpse, a brief flash of light. Say it like _glimpse_ w
 /plugin install glimt --marketplace mmedum/glimt
 ```
 
-Needs Claude Code 2.1.287 or later in a terminal; tested with 2.1.294. Mods don't draw in the VS Code panel or with `-p`.
+Needs Claude Code 2.1.289 or later in a terminal (2.1.295 for desktop notifications); tested with 2.1.295. Mods don't draw in the VS Code panel or with `-p`.
 
 The pane opens by itself when the terminal is at least 144 columns wide. `/glimt` opens it at any width, with the keyboard.
 
@@ -45,6 +45,8 @@ The keys work while the pane holds the keyboard: open it with `/glimt`, click it
 
 A spinner marks whatever is working right now: a running agent, a working session, the step in progress while Claude is on it. The rest keep still marks: `◉` waiting for you, `○` idle, `✓` done, `✗` failed, `■` stopped.
 
+A waiting session says what it wants: `approve` for a permission prompt, `answer` for a question. Each other session shows how long it has been in its state, counted from when glimt saw that state begin, and its name turns bold when it stops, until you open it.
+
 ## How it works
 
 Mods run with your permissions, so here is everything glimt touches. `claude plugin validate` lists the same.
@@ -52,12 +54,13 @@ Mods run with your permissions, so here is everything glimt touches. `claude plu
 - **This session:** it follows the session's tool calls, tasks and subagents through the mod API. While the task tools are on offer, it adds one sentence to the system prompt asking Claude to file sub-steps under their step (`metadata.parent`).
 - **Other sessions:** it runs `claude agents --json` every 5 seconds while the pane is drawn. Under `~/.claude/projects/` it lists an open session's subagents every 5 seconds, and reads transcripts with `tail` and `head`, every 2 seconds while you are inside one.
 - **Between sessions:** each session's glimt writes its running agents, and any rename it is asked to make, to Claude Code's plugin store.
+- **Notifications:** when a background session starts waiting for you, glimt raises one notification through your own notification setting, or a toast where your terminal shows none; nothing if you turned notifications off. A session in a terminal of its own notifies from there.
 - **Actions:** `claude --bg`, `claude stop`, `/rename` and `/clear`, only when you press their keys. `/rename` also runs when you rename this session from another session's glimt.
 - **The chat:** while the pane is open, it leaves task-list rows out of the chat and keeps a running agent's row to one line.
 
 It makes no network requests.
 
-The plan comes from Claude's task list. Claude Code 2.1.294 offers that list only to background sessions (agent view, or `claude --bg`), so in a session started in a terminal the plan stays empty; everything else works the same.
+The plan comes from Claude's task list. Claude Code offers that list by default only on some models, and on every model in background sessions (agent view, or `claude --bg`); see [task tool availability](https://code.claude.com/docs/en/tools-reference#task-tool-availability). To have it in a terminal session on other models, start Claude Code with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`. Without it, the plan says so and everything else works the same.
 
 It can't switch this terminal to another session: Claude Code offers mods no way to do that ([#100519](https://github.com/anthropics/claude-code/issues/100519)). In an attached background session, ← on an empty prompt returns to agent view.
 
@@ -65,7 +68,7 @@ It can't switch this terminal to another session: Claude Code offers mods no way
 
 Questions and bugs: [open an issue](https://github.com/mmedum/glimt/issues). For a pull request, open an issue first.
 
-Run the tests with `claude plugin test .` and check the manifests with `claude plugin validate --strict .`. Format with `npx oxfmt` and lint with `npx -p oxlint -p oxlint-tsgolint oxlint --type-aware hooks tests`; CI pins the versions. Claude Code writes the API types into `.claude-plugin/types/` when it loads the mod (`claude -p --plugin-dir . /glimt` does it without a session); after that, `tsc -p .` type-checks it.
+Run the tests with `claude plugin test .` and check the manifests with `claude plugin validate --strict .`. Format with `npx oxfmt` and lint with `npx -p oxlint -p oxlint-tsgolint oxlint --type-aware hooks tests`; CI pins the versions. Claude Code writes the API types into `.claude-plugin/types/` when an interactive session loads the mod from its folder (`claude --plugin-dir .`); after that, `tsc -p .` type-checks it. CI gets the same types another way; see `.github/workflows/ci.yml`.
 
 To release: bump `version` in `.claude-plugin/plugin.json` (installed copies only update when it changes), add the version's section to `CHANGELOG.md`, then tag `vX.Y.Z` and publish a GitHub Release with that section.
 

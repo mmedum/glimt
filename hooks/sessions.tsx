@@ -1,7 +1,7 @@
 // The other Claude Code sessions on the machine, and their agents: how they
 // are listed, sorted and drawn.
 
-import type { RemoteAgent, RemoteList, Session, Shared, SharedAgent } from '../types'
+import type { Phase, RemoteAgent, RemoteList, Session, SessionState, Shared, SharedAgent } from '../types'
 import { TASK_LINES } from './agents'
 import { runtime } from './state'
 import { cells, clip, fit, fitStart, isRecord, minutes, spin, toolName, wrap } from './text'
@@ -36,9 +36,9 @@ export function isShared(value: unknown): value is Shared {
 // Waiting for its person first, then working, then idle; the list's order
 // within each.
 export function sortSessions(list: Session[]): Session[] {
-  const rank = (s: Session) => (s.state === 'blocked' ? 0 : isSessionBusy(s) ? 1 : 2)
+  const rank: Record<SessionState, number> = { waiting: 0, working: 1, idle: 2 }
 
-  return list.toSorted((a, b) => rank(a) - rank(b))
+  return list.toSorted((a, b) => rank[sessionState(a)] - rank[sessionState(b)])
 }
 
 // The sessions in what `claude agents --json` printed; an entry with no
@@ -65,6 +65,7 @@ export function parseSessions(value: unknown): Session[] {
         kind: text(fields.kind) ?? 'session',
         status: text(fields.status),
         state: text(fields.state),
+        waitingFor: text(fields.waitingFor),
         pid: typeof fields.pid === 'number' ? fields.pid : undefined,
         startedAt: typeof fields.startedAt === 'number' ? fields.startedAt : 0,
       },
@@ -91,19 +92,21 @@ export type Listing = {
   open: readonly string[]
   asked: string | null
   answer: (isYes: boolean) => void
+  phases: Record<string, Phase>
 }
 
 // The other Claude Code sessions on the machine in `room` rows, one line
-// each, the ones waiting for their person first, with how many agents their
-// glimt says run. Opened, a session shows where it runs and its id, then
-// its agents (l goes into the session, or into one of them); after x, it
-// asks whether to stop it. Past the room, the idle ones fold into one line,
-// then the rest are counted.
+// each, the ones waiting for their person first, with how long they have
+// been in that state and how many agents their glimt says run; a name in
+// bold stopped since the person last opened it. Opened, a session shows
+// where it runs and its id, then its agents (l goes into the session, or
+// into one of them); after x, it asks whether to stop it. Past the room,
+// the idle ones fold into one line, then the rest are counted.
 export function sessionSection(view: View, listing: Listing, room: number) {
   const { Box, Button, Text } = view.ui
   const { list, error, open, asked } = listing
   const all = list ?? []
-  const waiting = all.filter(s => s.state === 'blocked').length
+  const waiting = all.filter(isSessionWaiting).length
   const working = all.filter(isSessionBusy).length
   const count = [waiting > 0 ? `${waiting} waiting` : '', working > 0 ? `${working} working` : ''].filter(part => part !== '').join(' · ')
 
@@ -127,7 +130,7 @@ export function sessionSection(view: View, listing: Listing, room: number) {
   let shown = all
   let idle = 0
   if (total(shown) > budget) {
-    shown = all.filter(s => s.state === 'blocked' || isSessionBusy(s) || isOpen(s))
+    shown = all.filter(s => sessionState(s) !== 'idle' || isOpen(s))
     idle = all.length - shown.length
   }
   let hidden = 0
@@ -169,8 +172,10 @@ export function sessionSection(view: View, listing: Listing, room: number) {
         {shown.map(s => {
           const crew = crews.get(s.sessionId)
           const { mark, color, word } = sessionMark(s, view.at)
+          const phase = listing.phases[s.sessionId]
+          const isUnseen = phase?.isUnseen === true
           const running = sharedOf(s).length
-          const tally = `${word} · ${minutes(view.at - s.startedAt)}${running === 0 ? '' : ` · ${running} ${running === 1 ? 'agent' : 'agents'}`}`
+          const tally = `${stateText(word, phase, view.at)}${running === 0 ? '' : ` · ${running} ${running === 1 ? 'agent' : 'agents'}`}`
 
           return (
             <Box key={`session-${s.sessionId}`} flexDirection="column">
@@ -182,10 +187,12 @@ export function sessionSection(view: View, listing: Listing, room: number) {
                   onPress={() => view.toggle(`session:${s.sessionId}`)}
                 />
                 <Box flexGrow={1}>
-                  <Text dimColor={word === 'idle'}>
+                  <Text dimColor={word === 'idle' && !isUnseen}>
                     {' '}
                     <Text color={color}>{mark}</Text>{' '}
-                    <Text inverse={view.cursor === `toggle-session-${s.sessionId}`}>{fit(s.name, view.columns - 4 - cells(tally) - 1)}</Text>
+                    <Text bold={isUnseen} inverse={view.cursor === `toggle-session-${s.sessionId}`}>
+                      {fit(s.name, view.columns - 4 - cells(tally) - 1)}
+                    </Text>
                   </Text>
                 </Box>
                 <Text dimColor> {tally}</Text>
@@ -333,16 +340,64 @@ export function remoteTally(view: View, a: RemoteAgent, share: SharedAgent | und
   return `${minutes(view.at - share.startedAt)} · ${doing}`
 }
 
-export function isSessionBusy(s: Session): boolean {
-  return s.state !== 'blocked' && (s.status === 'busy' || s.state === 'working')
+// Waiting for its person: a background session says so as its state, any
+// session as its status.
+export function isSessionWaiting(s: Session): boolean {
+  return s.state === 'blocked' || s.status === 'waiting'
 }
 
+export function isSessionBusy(s: Session): boolean {
+  return !isSessionWaiting(s) && (s.status === 'busy' || s.state === 'working')
+}
+
+export function sessionState(s: Session): SessionState {
+  return isSessionWaiting(s) ? 'waiting' : isSessionBusy(s) ? 'working' : 'idle'
+}
+
+// What a waiting session wants of its person, by why it waits: a
+// permission prompt or a sandbox request an approval, a question an answer.
+const WANTS: Record<string, 'approve' | 'answer'> = { 'permission prompt': 'approve', 'sandbox request': 'approve', 'input needed': 'answer' }
+
 // A session's mark and word: the spinner while it works, ◉ while it waits
-// for its person, ○ while it idles. The word says it again without color.
+// for its person, ○ while it idles. The word says it again without color,
+// and a waiting session's says what it wants, where it says why it waits.
 export function sessionMark(s: Session, at: number): { mark: string; color: string; word: string } {
-  if (s.state === 'blocked') {
-    return { mark: '◉', color: 'warning', word: 'waiting' }
+  const state = sessionState(s)
+  if (state === 'waiting') {
+    return { mark: '◉', color: 'warning', word: WANTS[s.waitingFor ?? ''] ?? 'waiting' }
   }
 
-  return isSessionBusy(s) ? { mark: spin(at), color: 'claude', word: 'working' } : { mark: '○', color: 'subtle', word: 'idle' }
+  return state === 'working' ? { mark: spin(at), color: 'claude', word: 'working' } : { mark: '○', color: 'subtle', word: 'idle' }
+}
+
+// The word, and how long the session has been in its state when glimt saw
+// that state begin: "idle · 4m", or "idle".
+export function stateText(word: string, phase: Phase | undefined, at: number): string {
+  return phase?.since === undefined ? word : `${word} · ${minutes(at - phase.since)}`
+}
+
+// The sessions' phases after a read at `at`. A session glimt meets for the
+// first time is in a phase of unknown age; one whose state changed starts a
+// phase now, unseen if it stopped; a session no longer listed is dropped.
+export function nextPhases(before: Record<string, Phase>, list: Session[], at: number): Record<string, Phase> {
+  return Object.fromEntries(
+    list.map(s => {
+      const state = sessionState(s)
+      const was = before[s.sessionId]
+      const phase: Phase =
+        was === undefined ? { state, isUnseen: false } : was.state === state ? was : { state, since: at, isUnseen: state !== 'working' }
+      return [s.sessionId, phase]
+    }),
+  )
+}
+
+// What a notification says of a session that started waiting.
+export function waitingNote(s: Session): string {
+  const wants = WANTS[s.waitingFor ?? '']
+
+  return wants === 'approve'
+    ? `${s.name} needs your approval`
+    : wants === 'answer'
+      ? `${s.name} has a question for you`
+      : `${s.name} is waiting for you`
 }

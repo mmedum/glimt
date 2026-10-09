@@ -1,6 +1,7 @@
+import type { On } from 'claude-code'
 import { describe, expect, test } from 'claude-code/testing'
-import { loops, mount, textOf } from './kit'
-import { LISTED, DOCS, TAIL, listReads, machine, offered, onSession, sessionOrder, stops, tails } from './machine'
+import { LONG_CLOCK, loops, mount, textOf } from './kit'
+import { DOCS_BUSY, LISTED, DOCS, TAIL, listReads, machine, offered, onSession, sessionOrder, stops, tails } from './machine'
 
 describe('sessions', () => {
   test('lists the other sessions under Agents: waiting first, then working, then idle', async ($, on) => {
@@ -9,27 +10,101 @@ describe('sessions', () => {
 
     expect(await textOf(ui, 'sessions-heading')).toBe('Sessions  1 waiting · 1 working')
     expect(await sessionOrder(ui)).toEqual(['session-d3d04fc1-full', 'session-a15af547-full', 'session-1879e383-full'])
-    expect(await textOf(ui, 'session-d3d04fc1-full')).toBe('▸ ◉ release-notes waiting · 1h00m')
-    expect(await textOf(ui, 'session-a15af547-full')).toBe('▸ ⠋ api-refactor working · 1h00m')
-    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ docs-site idle · 59m')
+    // Seen in these states from the first read: since when is not known.
+    expect(await textOf(ui, 'session-d3d04fc1-full')).toBe('▸ ◉ release-notes waiting')
+    expect(await textOf(ui, 'session-a15af547-full')).toBe('▸ ⠋ api-refactor working')
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ docs-site idle')
   })
 
-  test('writes a running time by the minute: <1m below a minute, then minutes, then hours', async ($, on) => {
-    const startedAgo = (age: number, id: string) => ({
+  // An escaped bug: a session in a terminal of its own says it waits by its
+  // status alone, and showed as idle.
+  test('marks a session in its own terminal that waits for its person, and sorts it first', async ($, on) => {
+    const asking = {
+      pid: 7,
       cwd: '/tmp',
       kind: 'interactive',
-      startedAt: 3_600_000 - age,
-      sessionId: id,
-      name: id,
-      status: 'idle',
-    })
-    await machine($, on, { listed: [startedAgo(59_999, 's1'), startedAgo(60_000, 's2'), startedAgo(3_599_999, 's3'), startedAgo(3_600_000, 's4')] })
+      startedAt: 0,
+      sessionId: 'tty-1',
+      name: 'migration',
+      status: 'waiting',
+      waitingFor: 'permission prompt',
+    }
+    await machine($, on, { listed: [...LISTED.filter(s => s.sessionId !== 'd3d04fc1-full'), asking] })
     const ui = await mount($)
 
-    expect(await textOf(ui, 'session-s1')).toBe('▸ ○ s1 idle · <1m')
-    expect(await textOf(ui, 'session-s2')).toBe('▸ ○ s2 idle · 1m')
-    expect(await textOf(ui, 'session-s3')).toBe('▸ ○ s3 idle · 59m')
-    expect(await textOf(ui, 'session-s4')).toBe('▸ ○ s4 idle · 1h00m')
+    expect(await textOf(ui, 'sessions-heading')).toBe('Sessions  1 waiting · 1 working')
+    expect(await sessionOrder(ui)).toEqual(['session-tty-1', 'session-a15af547-full', 'session-1879e383-full'])
+    expect(await textOf(ui, 'session-tty-1')).toBe('▸ ◉ migration approve')
+  })
+
+  test('says what a waiting session wants, by why it waits', async ($, on) => {
+    const waits = (id: string, waitingFor?: string) => ({
+      cwd: '/tmp',
+      kind: 'interactive',
+      startedAt: 0,
+      sessionId: id,
+      name: id,
+      status: 'waiting',
+      ...(waitingFor === undefined ? {} : { waitingFor }),
+    })
+    await machine($, on, {
+      listed: [
+        waits('s1', 'permission prompt'),
+        waits('s2', 'sandbox request'),
+        waits('s3', 'input needed'),
+        waits('s4', 'dialog open'),
+        waits('s5'),
+      ],
+    })
+    const ui = await mount($)
+
+    expect(await textOf(ui, 'session-s1')).toBe('▸ ◉ s1 approve')
+    expect(await textOf(ui, 'session-s2')).toBe('▸ ◉ s2 approve')
+    expect(await textOf(ui, 'session-s3')).toBe('▸ ◉ s3 answer')
+    expect(await textOf(ui, 'session-s4')).toBe('▸ ◉ s4 waiting')
+    expect(await textOf(ui, 'session-s5')).toBe('▸ ◉ s5 waiting')
+  })
+
+  test("counts a state's time from the read that saw it begin", LONG_CLOCK, async ($, on) => {
+    const relisted = { current: undefined as unknown }
+    const { clock } = await machine($, on, { listed: DOCS_BUSY, relisted })
+    const ui = await mount($)
+
+    // docs-site stops; the read 5 seconds on sees it, at 3,605,000.
+    relisted.current = LISTED
+    await clock.advance(5_000)
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ docs-site idle · <1m')
+    await clock.advance(59_900)
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ docs-site idle · <1m')
+    await clock.advance(100)
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ docs-site idle · 1m')
+  })
+
+  test('a session that stops shows its name in bold until it is opened or gone into', async ($, on) => {
+    const relisted = { current: undefined as unknown }
+    const { clock } = await machine($, on, { listed: DOCS_BUSY, relisted })
+    // docs-site works, so it is the second of the others.
+    const ui = await onSession($, 2)
+    const isBold = async () => (await ui.findAll({ type: 'Text' })).find(text => text.text === 'docs-site')?.props.bold === true
+    expect(await isBold()).toBe(false)
+
+    relisted.current = LISTED
+    await clock.advance(5_000)
+    expect(await isBold()).toBe(true)
+    await ui.press({ key: 'key-open' })
+    expect(await isBold()).toBe(false)
+
+    // It works again, and stops again: bold until l goes into it.
+    await ui.press({ key: 'key-open' })
+    relisted.current = DOCS_BUSY
+    await clock.advance(5_000)
+    expect(await isBold()).toBe(false)
+    relisted.current = LISTED
+    await clock.advance(5_000)
+    expect(await isBold()).toBe(true)
+    await ui.press({ key: 'key-into' })
+    await ui.press({ key: 'key-back' })
+    expect(await isBold()).toBe(false)
   })
 
   test('before anything has happened, says in one line what will show', async ($, on) => {
@@ -183,7 +258,7 @@ describe('sessions', () => {
 
     await ui.press({ key: 'key-into' })
     expect(tails(ran)).toEqual([['tail', '-c', '131072', DOCS]])
-    expect(await textOf(ui, 'drill-title')).toBe('○ docs-site  idle · 59m  ⎿ ~/code/docs · terminal · 1879e383-full')
+    expect(await textOf(ui, 'drill-title')).toBe('○ docs-site  idle  ⎿ ~/code/docs · terminal · 1879e383-full')
     expect(await textOf(ui, 'activity')).toBe('› Check the build● Running it now.  ⎿ Bash · npm test● All 12 tests pass.')
     expect(await ui.find({ key: 'sessions-heading' })).toBeUndefined()
 
@@ -246,5 +321,61 @@ describe('sessions', () => {
     await ui.input({ key: 'message-field', text: 'check the build' })
     // Claude Code hands the event the address as the session's id.
     expect(sent).toEqual([{ to: '1879e383-full', text: 'check the build' }])
+  })
+})
+
+describe('notifications', () => {
+  // release-notes, the background session, at work; then waiting to approve.
+  const WORKING = LISTED.map(s => (s.sessionId === 'd3d04fc1-full' ? { ...s, state: 'working', status: 'busy' } : s))
+  const ASKING = LISTED.map(s => (s.sessionId === 'd3d04fc1-full' ? { ...s, status: 'waiting', waitingFor: 'permission prompt' } : s))
+  type Answer = { isSent: true; channel: 'ghostty' } | { isSent: false; reason: 'no-channel' | 'disabled' }
+
+  function notifications(on: On, answer: { current: Answer } = { current: { isSent: true, channel: 'ghostty' } }) {
+    const sent: string[] = []
+    on('ui.notify', (_$, e) => {
+      sent.push(e.text)
+      return { value: answer.current }
+    })
+    return sent
+  }
+
+  test('tells of a background session that starts waiting, once', async ($, on) => {
+    const sent = notifications(on)
+    const relisted = { current: undefined as unknown }
+    const { clock, toasts } = await machine($, on, { listed: WORKING, relisted })
+
+    relisted.current = ASKING
+    await clock.advance(10_000)
+    expect(sent).toEqual(['release-notes needs your approval'])
+    expect(toasts).toEqual([])
+  })
+
+  test('leaves alone a session already waiting at the first read, and one in a terminal of its own', async ($, on) => {
+    const sent = notifications(on)
+    const relisted = { current: undefined as unknown }
+    const { clock } = await machine($, on, { listed: LISTED, relisted })
+
+    relisted.current = LISTED.map(s => (s.sessionId === 'a15af547-full' ? { ...s, status: 'waiting', waitingFor: 'input needed' } : s))
+    await clock.advance(10_000)
+    expect(sent).toEqual([])
+  })
+
+  test('shows a toast where no channel sent it, and nothing where notifications are off', async ($, on) => {
+    const answer: { current: Answer } = { current: { isSent: false, reason: 'no-channel' } }
+    const sent = notifications(on, answer)
+    const relisted = { current: undefined as unknown }
+    const { clock, toasts } = await machine($, on, { listed: WORKING, relisted })
+
+    relisted.current = ASKING
+    await clock.advance(5_000)
+    expect(toasts).toEqual(['release-notes needs your approval'])
+
+    answer.current = { isSent: false, reason: 'disabled' }
+    relisted.current = WORKING
+    await clock.advance(5_000)
+    relisted.current = ASKING
+    await clock.advance(5_000)
+    expect(sent.length).toBe(2)
+    expect(toasts).toEqual(['release-notes needs your approval'])
   })
 })

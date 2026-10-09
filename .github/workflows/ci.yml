@@ -16,12 +16,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The version glimt is tested with; the mod API moves between releases.
-      - run: npm install --global @anthropic-ai/claude-code@2.1.294
+      - run: npm install --global @anthropic-ai/claude-code@2.1.295
       - run: claude plugin validate --strict .
       - run: claude plugin test .
-      # Loading the mod once writes the engine's API types into
-      # .claude-plugin/types/, which the type-check needs; it needs no sign-in.
-      - run: claude -p --plugin-dir . /glimt
+      # The type-check needs the engine's API types in .claude-plugin/types/.
+      # Claude Code lays them beside a mod only in an interactive session, but
+      # writes the same file for its plugin-authoring skill whenever that
+      # loads, with no sign-in (the run itself stops at "Not logged in").
+      - run: |
+          claude -p /plugin-authoring || true
+          mkdir -p .claude-plugin/types/claude-code
+          cp "${TMPDIR:-/tmp}"/claude-"$(id -u)"/bundled-skills/*/*/plugin-authoring/types/claude-code.d.ts .claude-plugin/types/claude-code/index.d.ts
       - run: npx --yes -p typescript@7.0.2 tsc -p . --noEmit
       - run: npx --yes oxfmt@0.72.0 --check
       # oxlint's type-aware rules run on typescript-go: bump oxlint-tsgolint

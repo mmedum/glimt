@@ -1,10 +1,10 @@
 // Going into an agent or a session with l: what it is doing, read from its
 // transcript, drawn alone in the pane with a field to write to it.
 
-import type { Activity, Agent, Feed, Opened, RemoteAgent, RemoteList, Session, SharedAgent } from '../types'
+import type { Activity, Agent, Feed, Opened, Phase, RemoteAgent, RemoteList, Session, SharedAgent } from '../types'
 import { AGENT_MARK, agentTally, runningMark } from './agents'
-import { isReachable, isRemoteActive, placeOf, remoteSection, remoteTally, sessionMark } from './sessions'
-import { cells, clip, describeCall, fit, fitStart, isRecord, minutes, spin, toolName, wrap } from './text'
+import { isReachable, isRemoteActive, placeOf, remoteSection, remoteTally, sessionMark, stateText } from './sessions'
+import { cells, clip, describeCall, fit, fitStart, isRecord, spin, toolName, wrap } from './text'
 import { heading, keyButton, keyWidth, wrappedRows } from './view'
 import type { View } from './view'
 
@@ -66,11 +66,15 @@ export function callLine(tool: string, input: unknown): string {
 
 export type Drill = {
   into: Opened
+  // Where h goes: the overview, or the session the pane went into first.
+  backTo: string
   // What the pane is in, each undefined once it is gone: one of this
   // session's agents, another session (also the one of an agent of it), or
   // another session's agent.
   agent: Agent | undefined
   session: Session | undefined
+  // The session's state as glimt watched it.
+  phase: Phase | undefined
   remoteAgent: RemoteAgent | undefined
   // The session's agents as read, what its glimt shares, and whether it
   // runs one at all (to take a new name).
@@ -133,7 +137,7 @@ export function drillSection(view: View, drill: Drill) {
   } else if (into.kind === 'session' && session !== undefined) {
     const { mark, color, word } = sessionMark(session, view.at)
     title = { mark, color, name: session.name }
-    facts = [`${word} · ${minutes(view.at - session.startedAt)}`, fitStart(`⎿ ${placeOf(session)}`, width - 2)]
+    facts = [stateText(word, drill.phase, view.at), fitStart(`⎿ ${placeOf(session)}`, width - 2)]
   } else if (into.kind === 'remote' && remoteAgent !== undefined) {
     const share = shared.find(one => one.id === remoteAgent.id)
     const isActive = isRemoteActive(view, remoteAgent, share)
@@ -233,7 +237,7 @@ export function drillSection(view: View, drill: Drill) {
     toggles: crew?.toggles ?? [],
     node: (
       <Box key="drill" flexDirection="column">
-        <Button key="back" plain dimColor label="← Overview" onPress={act.back} />
+        <Button key="back" plain dimColor label={fit(`← ${drill.backTo}`, width)} onPress={act.back} />
         <Box key="drill-title" flexDirection="column" marginTop={1}>
           {title === undefined ? (
             <Text dimColor>{into.kind === 'session' ? 'This session is no longer listed.' : 'This agent is no longer listed.'}</Text>

@@ -20,9 +20,11 @@ import {
   isReachable,
   isSessionBusy,
   isShared,
+  nextPhases,
   parseSessions,
   sessionSection,
   sortSessions,
+  waitingNote,
 } from './sessions'
 import { PANE, runtime } from './state'
 import type { Toggle } from './state'
@@ -64,6 +66,8 @@ const expanded = atom({ plugin: 'glimt', key: 'expanded' } as const, [])
 const cursor = atom({ plugin: 'glimt', key: 'cursor' } as const, null)
 const sessions = atom({ plugin: 'glimt', key: 'sessions' } as const, null)
 const sessionsError = atom({ plugin: 'glimt', key: 'sessionsError' } as const, null)
+const phases = atom({ plugin: 'glimt', key: 'phases' } as const, {})
+const hasTaskList = atom({ plugin: 'glimt', key: 'hasTaskList' } as const, null)
 const stopping = atom({ plugin: 'glimt', key: 'stopping' } as const, null)
 const self = atom({ plugin: 'glimt', key: 'self' } as const, null)
 const shared = atom({ plugin: 'glimt', key: 'shared' } as const, {})
@@ -143,8 +147,12 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('prompt.compose', async (_$, e, next) => {
+  // Whether Claude has a task list depends on the model; the plan says so
+  // while it is empty.
+  on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
+    const isOffered = e.tools.includes('TaskCreate') || e.tools.includes('TodoWrite')
+    await update($, hasTaskList, was => was === true || isOffered)
     if (!e.tools.includes('TaskCreate')) {
       return composed
     }
@@ -499,10 +507,15 @@ export const register: Register = on => {
     const tasks = await read($, remoteTasks)
     if (into !== undefined) {
       const sessionId = into.kind === 'agent' ? undefined : into.sessionId
+      // h goes back to the session the pane went into first, else to the overview.
+      const below = (await read($, opened)).at(-2)
+      const parent = below?.kind === 'session' ? listed?.find(s => s.sessionId === below.sessionId) : undefined
       const drill = drillSection(view, {
         into,
+        backTo: below === undefined ? 'Overview' : (parent?.name ?? 'back'),
         agent: into.kind === 'agent' ? team.find(a => a.id === into.id) : undefined,
         session: sessionId === undefined ? undefined : listed?.find(s => s.sessionId === sessionId),
+        phase: into.kind === 'session' ? (await read($, phases))[into.sessionId] : undefined,
         remoteAgent: into.kind === 'remote' ? remoteBy[into.sessionId]?.agents.find(a => a.id === into.agentId) : undefined,
         remote: sessionId === undefined ? undefined : remoteBy[sessionId],
         shared: sessionId === undefined ? [] : (sharedBy[sessionId]?.agents ?? []),
@@ -601,6 +614,7 @@ export const register: Register = on => {
         open,
         asked: await read($, stopping),
         answer: isYes => void answerStop($, isYes),
+        phases: await read($, phases),
       },
       shareOf(SESSION_SHARE) + spare - Math.max(0, crew.rows - shareOf(AGENT_SHARE)),
     )
@@ -625,7 +639,7 @@ export const register: Register = on => {
           {current.node}
         </Box>
         <Box flexDirection="column" marginTop={1}>
-          {planSection(view, approved, list, lines)}
+          {planSection(view, approved, list, lines, await read($, hasTaskList))}
         </Box>
         <Box flexDirection="column" marginTop={1}>
           {crew.node}
@@ -686,6 +700,7 @@ async function toggle($: EngineInterface, id: string) {
   // Another session shows its agents as it opens; one of them, its task.
   const [kind = '', sessionId = '', agentId = ''] = id.split(':')
   if (open.includes(id) && kind === 'session') {
+    await markSeen($, sessionId)
     await readRemote($, [sessionId]).catch(() => undefined)
   }
   if (open.includes(id) && kind === 'remote') {
@@ -743,6 +758,7 @@ async function goInto($: EngineInterface) {
   await update($, feed, () => null)
   await update($, opened, trail => [...trail, step])
   if (step.kind === 'session') {
+    await markSeen($, step.sessionId)
     await readRemote($, [step.sessionId]).catch(() => undefined)
   }
   if (step.kind === 'remote') {
@@ -1031,7 +1047,51 @@ async function readSessions($: EngineInterface, isAsked: boolean) {
   await update($, now, () => at)
   await update($, sessions, () => list)
   await update($, sessionsError, () => null)
+  // A background session that started waiting since the last read is told
+  // of; one in a terminal of its own notifies from there.
+  const selfId = await read($, self)
+  let started: Session[] = []
+  await update($, phases, before => {
+    const after = nextPhases(before, list, at)
+    started = list.filter(
+      s =>
+        s.sessionId !== selfId &&
+        s.kind === 'background' &&
+        before[s.sessionId] !== undefined &&
+        before[s.sessionId]?.state !== 'waiting' &&
+        after[s.sessionId]?.state === 'waiting',
+    )
+    return after
+  })
+  for (const s of started) {
+    void tellWaiting($, s).catch(() => undefined)
+  }
   await loadShared($, list, at).catch(() => undefined)
+}
+
+// A notification through the person's own channel, or a toast where no
+// channel sent it (or Claude Code is older than $.ui.notify); nothing where
+// they turned notifications off.
+async function tellWaiting($: EngineInterface, s: Session) {
+  const text = waitingNote(s)
+  let sent: Awaited<ReturnType<EngineInterface['ui']['notify']>> | null
+  try {
+    sent = await $.ui.notify(text)
+  } catch {
+    sent = null
+  }
+  if (sent === null || (!sent.isSent && sent.reason !== 'disabled' && sent.reason !== 'refused')) {
+    $.ui.toast(text)
+  }
+}
+
+// Opening a session, in the list or by going into it, takes the bold off
+// its name.
+async function markSeen($: EngineInterface, sessionId: string) {
+  await update($, phases, all => {
+    const phase = all[sessionId]
+    return phase?.isUnseen === true ? { ...all, [sessionId]: { ...phase, isUnseen: false } } : all
+  })
 }
 
 // What the listed sessions' glimts share, fresh ones only. The shares of

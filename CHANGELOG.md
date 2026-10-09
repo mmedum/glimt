@@ -4,9 +4,23 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+### Added
+
+- A waiting session says what it wants: `approve` for a permission prompt, `answer` for a question.
+- A session's name turns bold when it stops, until you open it.
+- A notification when a background session starts waiting for you, through your own notification setting (Claude Code 2.1.295), or a toast where your terminal shows none.
+
 ### Changed
 
-- The code is checked with the strictest TypeScript settings, linted with oxlint (type-aware) and formatted with oxfmt, in CI too. glimt behaves as before.
+- A session's time counts from when glimt saw its state begin, not from when the session started; until glimt has seen that, the row shows no time.
+- An empty plan says when Claude has no task list in the session; the README says how to turn it on.
+- Needs Claude Code 2.1.289 or later; tested with 2.1.295.
+- The code is checked with the strictest TypeScript settings, linted with oxlint (type-aware) and formatted with oxfmt, in CI too.
+
+### Fixed
+
+- A session in a terminal of its own that waits for you showed as idle; it now shows `◉` and sorts first.
+- Inside another session's agent, the way back named the overview; it now names the session `h` returns to.
 
 ## [0.1.0] - 2026-10-09
 

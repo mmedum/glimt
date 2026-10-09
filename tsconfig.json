@@ -1,6 +1,17 @@
 {
-  "extends": "./.claude-plugin/types/tsconfig.json",
   "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "types": [],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "jsx": "react",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment",
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noImplicitReturns": true,
@@ -13,5 +24,6 @@
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "esModuleInterop": true
-  }
+  },
+  "include": [".claude-plugin/types", "hooks", "types", "tests"]
 }

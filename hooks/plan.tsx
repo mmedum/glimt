@@ -219,7 +219,9 @@ export const STEP_MARK: Record<StepStatus, { mark: string; color: string }> = {
   pending: { mark: '☐', color: 'subtle' },
 }
 
-export function planSection(view: View, approved: Plan | null, list: Step[], lines: PlanLine[]) {
+// Empty, the plan says why where it knows: Claude has no task list here,
+// which depends on the model.
+export function planSection(view: View, approved: Plan | null, list: Step[], lines: PlanLine[], hasTaskList: boolean | null) {
   const { Box, Button, Text } = view.ui
   const done = list.filter(step => step.status === 'completed').length
 
@@ -228,7 +230,7 @@ export function planSection(view: View, approved: Plan | null, list: Step[], lin
       {heading(view, 'plan-heading', approved === null ? 'Plan' : `Plan · ${approved.title}`, list.length === 0 ? '' : `${done}/${list.length}`)}
       {list.length === 0 && (
         <Box key="no-steps">
-          <Text dimColor>No steps yet.</Text>
+          <Text dimColor>{hasTaskList === false ? 'No task list in this session.' : 'No steps yet.'}</Text>
         </Box>
       )}
       {lines.map(line => {

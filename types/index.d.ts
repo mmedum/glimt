@@ -62,8 +62,10 @@ export type Plan = { title: string; path?: string | undefined }
 
 // One Claude Code session on this machine, as `claude agents --json` lists
 // it. `id` is a background session's short id, what `claude attach` and
-// `claude stop` take; `status` is busy or idle, `state` working, blocked
-// (waiting for the person) and the like.
+// `claude stop` take; `status` is busy, waiting or idle for every session,
+// `state` working, blocked (waiting for the person) and the like for a
+// background one; `waitingFor` says why it waits ("permission prompt",
+// "input needed", ...).
 export type Session = {
   sessionId: string
   id?: string | undefined
@@ -72,9 +74,18 @@ export type Session = {
   kind: string
   status?: string | undefined
   state?: string | undefined
+  waitingFor?: string | undefined
   pid?: number | undefined
   startedAt: number
 }
+
+// What a session is doing, as its mark says it.
+export type SessionState = 'waiting' | 'working' | 'idle'
+
+// Another session's state as glimt has watched it: since when, undefined
+// while glimt has not seen it begin, and whether it stopped (went idle or
+// waiting) since the person last opened it.
+export type Phase = { state: SessionState; since?: number | undefined; isUnseen: boolean }
 
 // A running agent of another session, as that session's glimt shares it
 // through the store every session on the machine reads.
@@ -132,6 +143,11 @@ declare module 'claude-code' {
       sessions: Session[] | null
       // Why the last read failed, until one succeeds.
       sessionsError: string | null
+      // The other sessions' states as glimt watched them, by session id.
+      phases: Record<string, Phase>
+      // Whether this session's requests offer Claude a task list; null
+      // before the first. Once one does, it stays true.
+      hasTaskList: boolean | null
       // The session `x` asked to stop, waiting for y or n.
       stopping: string | null
       // This session's id, to leave it out of the list: the pane is about it.

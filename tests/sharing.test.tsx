@@ -28,8 +28,8 @@ describe('sharing between sessions', () => {
     await machine($, on, { stored: { 'agents:1879e383-full': share(3_540_000), 'agents:a15af547-full': share(3_539_999) } })
     const ui = await mount($)
 
-    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ docs-site idle · 59m · 1 agent')
-    expect(await textOf(ui, 'session-a15af547-full')).toBe('▸ ⠋ api-refactor working · 1h00m')
+    expect(await textOf(ui, 'session-1879e383-full')).toBe('▸ ○ docs-site idle · 1 agent')
+    expect(await textOf(ui, 'session-a15af547-full')).toBe('▸ ⠋ api-refactor working')
   })
 
   test("clears away what sessions no longer listed shared or were asked, and keeps this session's own though it is not listed yet", async ($, on) => {

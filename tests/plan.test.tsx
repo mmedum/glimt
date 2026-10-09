@@ -332,4 +332,17 @@ describe('system prompt', () => {
     const without = await $.prompt.compose({ ...COMPOSE, tools: ['Read'] })
     expect(without.sections.map(section => section.id)).toEqual(['intro'])
   })
+
+  test('an empty plan says the session has no task list while Claude is offered none; once one is, it says no steps', async ($, on) => {
+    on('prompt.compose', () => ({ sections: [] }))
+    const ui = await mount($)
+
+    await $.prompt.compose({ ...COMPOSE, tools: ['Read'] })
+    expect(await textOf(ui, 'no-steps')).toBe('No task list in this session.')
+    await $.prompt.compose({ ...COMPOSE, tools: ['Read', 'TodoWrite'] })
+    expect(await textOf(ui, 'no-steps')).toBe('No steps yet.')
+    // A request that offers none, such as a subagent's, changes nothing.
+    await $.prompt.compose({ ...COMPOSE, tools: ['Read'] })
+    expect(await textOf(ui, 'no-steps')).toBe('No steps yet.')
+  })
 })

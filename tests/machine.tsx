@@ -26,9 +26,15 @@ export const LISTED = [
   { pid: 294443, cwd: '/srv/api', kind: 'interactive', startedAt: 0, sessionId: 'a15af547-full', name: 'api-refactor', status: 'busy' },
 ]
 
+// LISTED with docs-site at work.
+export const DOCS_BUSY = LISTED.map(s => (s.sessionId === '1879e383-full' ? { ...s, status: 'busy' } : s))
+
 export type Machine = { ran: string[][]; toasts: string[]; copied: string[]; clock: ReturnType<typeof mock.clock>; store: Map<string, unknown> }
 export type MachineOptions = {
   listed?: unknown
+  // What `claude agents --json` lists from the next read on, in place of
+  // `listed`, for a test that changes it.
+  relisted?: { current: unknown }
   stdout?: string
   stderr?: string
   stopError?: string
@@ -46,7 +52,8 @@ export type MachineOptions = {
 }
 
 // The machine beneath the plugin, an hour in: `claude agents --json` prints
-// `listed` (or `stdout` as given, or fails with `stderr`), `claude stop`
+// `listed` (`relisted` once set, or `stdout` as given, or fails with
+// `stderr`), `claude stop`
 // stops (or fails with `stopError`), `head` and `tail` print a file's
 // `outputs` (else `transcript`), the files in `files` exist, Claude Code's
 // projects folder holds `folders`, each of `dirs` lists its files, `texts`
@@ -54,7 +61,15 @@ export type MachineOptions = {
 // /home/demo and this session is "self-full". Starts the session.
 export async function machine($: Engine, on: On, options: MachineOptions = {}): Promise<Machine> {
   const { listed = LISTED, stdout, stderr = '', stopError = '', placed = [true], transcript = '', files = [], folders = [] } = options
-  const { dirs = {}, texts = {}, outputs = {}, stored = {}, selfId = { current: 'self-full' }, listFails = false } = options
+  const {
+    dirs = {},
+    texts = {},
+    outputs = {},
+    stored = {},
+    selfId = { current: 'self-full' },
+    listFails = false,
+    relisted = { current: undefined },
+  } = options
   const seen = { ran: [] as string[][], toasts: [] as string[], copied: [] as string[] }
   const clock = mock.clock(on, { now: 3_600_000 })
   mock.env(on, { HOME: '/home/demo' })
@@ -94,7 +109,7 @@ export async function machine($: Engine, on: On, options: MachineOptions = {}): 
     }
     const isList = e.argv[1] === 'agents'
     const error = isList ? stderr : stopError
-    const printed = isList ? (stdout ?? JSON.stringify(listed)) : ''
+    const printed = isList ? (stdout ?? JSON.stringify(relisted.current ?? listed)) : ''
     const failed = error !== '' || (isList && listFails)
     return { value: { exitCode: failed ? 1 : 0, stdout: printed, stderr: error, isStdoutTruncated: false, isStderrTruncated: false } }
   })
