@@ -9,6 +9,9 @@
   "homepage": "https://github.com/mmedum/glimt",
   "repository": "https://github.com/mmedum/glimt",
   "license": "Apache-2.0",
+  "icon": "./.claude-plugin/icon.png",
+  "documentationUrl": "https://github.com/mmedum/glimt#readme",
+  "supportUrl": "https://github.com/mmedum/glimt/issues",
   "keywords": ["claude-code", "mod", "pane", "agents", "subagents", "sessions", "tui"],
   "types": "./types/index.d.ts"
 }

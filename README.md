@@ -9,6 +9,8 @@ A quiet side pane for Claude Code: what this session is doing, its plan, its age
 
 _glimt_ is Danish for a glimpse, a brief flash of light. Say it like _glimpse_ without the _-pse_: GLIMT, with a short _i_.
 
+Its icon says what it does: everything stays in line; the one that needs you steps out.
+
 ![glimt beside a session: this session, Now, the plan with its steps, two agents at work, and three other sessions](docs/screenshot.png)
 
 ## Install
@@ -49,16 +51,36 @@ A waiting session says what it wants: `approve` for a permission prompt, `answer
 
 ## How it works
 
-Mods run with your permissions, so here is everything glimt touches. `claude plugin validate` lists the same.
+Mods run with your permissions, so here is everything glimt touches. `claude plugin validate` lists the same. glimt itself makes no network requests; an agent or a session you start with it talks to Claude like any other.
 
-- **This session:** it follows the session's tool calls, tasks and subagents through the mod API. While the task tools are on offer, it adds one sentence to the system prompt asking Claude to file sub-steps under their step (`metadata.parent`).
-- **Other sessions:** it runs `claude agents --json` every 5 seconds while the pane is drawn. Under `~/.claude/projects/` it lists an open session's subagents every 5 seconds, and reads transcripts with `tail` and `head`, every 2 seconds while you are inside one.
-- **Between sessions:** each session's glimt writes its running agents, and any rename it is asked to make, to Claude Code's plugin store.
-- **Notifications:** when a background session starts waiting for you, glimt raises one notification through your own notification setting, or a toast where your terminal shows none; nothing if you turned notifications off. A session in a terminal of its own notifies from there.
-- **Actions:** `claude --bg`, `claude stop`, `/rename` and `/clear`, only when you press their keys. `/rename` also runs when you rename this session from another session's glimt.
-- **The chat:** while the pane is open, it leaves task-list rows out of the chat and keeps a running agent's row to one line.
+**What it reads**
 
-It makes no network requests.
+- This session's tool calls, tasks, subagents and turns, through the mod API, and the messages of one of its agents while you are inside it.
+- The sessions on this machine and their state, from `claude agents --json`, every 5 seconds while the pane is drawn.
+- Under `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR/projects/`), for a session you open: its subagents' file names and `.meta.json` files every 5 seconds, its transcript's last 128 KiB every 2 seconds while you are inside it, and an agent's first line when you open that agent.
+- The environment variables `HOME` and `CLAUDE_CONFIG_DIR`, only to find that folder and to write paths as `~`. It reads no credentials.
+
+**What it runs**
+
+- These programs, and no others: `claude agents --json`; `tail -c 131072 <transcript>` and `head -n 1 <agent transcript>` for the reads above; `claude --bg <task>`, in this session's folder, when you press `s` and type a task; `claude stop <id>` when you press `x` on a background session and answer `y`.
+- Two of Claude Code's task tools, which only read: `TaskList` once at session start, so a resumed session shows its plan, and `TaskGet` when you open a step, for its description.
+- Two slash commands: `/rename <name>` when you rename this session with `r`, or when another session's glimt asks it to take a name; `/clear` when you press `c` and answer `y`.
+- A `general-purpose` agent when you press `n`. Its prompt is the task you type, and nothing else.
+
+**What it writes**
+
+- A message you type with `m`, as typed, to the agent or session you are inside, through Claude Code.
+- Claude Code's plugin store, which only glimt in the other sessions on this machine reads: this session's running agents (type, description, task, start time, the tool each runs and how many it has run) and names asked of other sessions.
+- When a background session starts waiting for you, one notification through `$.ui.notify`, Claude Code's own call (2.1.295), and your notification setting; a toast where your terminal shows none; nothing if you turned notifications off. A session in a terminal of its own notifies from there.
+- `claude attach <id>` to your clipboard when you press `a`.
+
+**What its hooks change**
+
+- The system prompt: while Claude has the task tools, one sentence asking it to file sub-steps under their step (`metadata.parent`).
+- The chat, while the pane is open: task-list rows are left out, and a running agent's row is kept to one line.
+- `/glimt`, its own command, opens the pane.
+
+Its other hooks (tool calls, turns, agents, prompts, session start and end, focus) only read what passes, to keep the pane current, and pass it on unchanged.
 
 The plan comes from Claude's task list. Claude Code offers that list by default only on some models, and on every model in background sessions (agent view, or `claude --bg`); see [task tool availability](https://code.claude.com/docs/en/tools-reference#task-tool-availability). To have it in a terminal session on other models, start Claude Code with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`. Without it, the plan says so and everything else works the same.
 
