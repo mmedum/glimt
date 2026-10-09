@@ -1,6 +1,6 @@
 {
   "name": "glimt",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A quiet side pane: what this session is doing now, its plan, its agents as a tree, and every other Claude Code session with theirs",
   "author": {
     "name": "Mark Medum Bundgaard",
