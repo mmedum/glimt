@@ -85,7 +85,7 @@ export function isShownText(text: string): boolean {
 
 // "Read · /a/b.ts": the tool, and what the call is on when it says.
 export function callLine(tool: string, input: unknown): string {
-  const on = describeCall(typeof input === 'object' && input !== null ? input : {})
+  const on = describeCall(input)
 
   return on === undefined ? toolName(tool) : `${toolName(tool)} · ${on}`
 }
@@ -154,7 +154,7 @@ export function drillSection(view: View, drill: Drill) {
   if (into.kind === 'agent' && agent !== undefined) {
     title = { ...agentMark(view, agent), name: `${agent.type} ${agent.description}` }
     facts = [withModel(agentTally(view, agent, true), agent.model)]
-    const call = callOf(agent, askingOf(view, agent), width - 2)
+    const call = callOf(agent, askingOf(view.at, agent), width - 2)
     if (call !== undefined) {
       facts.push(call)
     }

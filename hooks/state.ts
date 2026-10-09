@@ -10,7 +10,8 @@ export type Toggle = { key: string; target: string }
 // last drawn (for j and k), whether the pane held the keyboard when last
 // drawn, the home folder and Claude Code's own folder,
 // whether anything runs (so the clock knows to move) and how many frames
-// have passed, and what this session last shared, and when.
+// have passed, what this session last shared, and when, and how many calls
+// it has seen start (each running call's id).
 export const runtime = {
   toggles: [] as Toggle[],
   isFocused: false,
@@ -20,4 +21,5 @@ export const runtime = {
   ticks: 0,
   lastShared: '',
   lastSharedAt: 0,
+  calls: 0,
 }

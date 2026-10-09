@@ -5,8 +5,23 @@
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, PromptOrigin, Register } from 'claude-code'
-import type { Activity, Agent, AgentState, Composer, Feed, Opened, Plan, RemoteAgent, RemoteList, Session, Shared, SharedAgent, Step } from '../types'
-import { ASK_SHOWN_MS, agentSection, contextTokens, isStoppable, isTurnRunning, mainAgent } from './agents'
+import type {
+  Activity,
+  Agent,
+  AgentState,
+  Composer,
+  Feed,
+  Opened,
+  Plan,
+  RemoteAgent,
+  RemoteList,
+  RunningCall,
+  Session,
+  Shared,
+  SharedAgent,
+  Step,
+} from '../types'
+import { agentSection, askCall, askingOf, contextTokens, isStoppable, isTurnRunning, mainAgent, withCalls } from './agents'
 import type { Spawned } from './agents'
 import { FEED_KEPT, TAIL_BYTES, callLine, drillSection, isShownText, lastModel, parseTranscript } from './drill'
 import { FORM_ROWS, composerSection, helpSection, keySection, selfSection } from './keys'
@@ -19,6 +34,7 @@ import {
   STALE_MS,
   isReachable,
   isSessionBusy,
+  isNotifier,
   isShared,
   nextPhases,
   parseSessions,
@@ -237,11 +253,9 @@ export const register: Register = on => {
     const agentId = e.agentId
     const state: AgentState = e.reason === 'answer' ? 'done' : e.reason === 'aborted' ? 'stopped' : 'failed'
     if (agentId === undefined) {
-      await update($, focus, f => (f === null ? f : { ...f, endedAt: at, outcome: state, tool: undefined, doing: undefined }))
+      await update($, focus, f => (f === null ? f : withCalls({ ...f, endedAt: at, outcome: state }, [])))
     } else {
-      await update($, agents, list =>
-        list.map(a => (a.agentId === agentId ? { ...a, state, endedAt: at, tool: undefined, doing: undefined, asking: undefined } : a)),
-      )
+      await update($, agents, list => list.map(a => (a.agentId === agentId ? withCalls({ ...a, state, endedAt: at }, []) : a)))
       await readAgentFeed($, agentId).catch(() => undefined)
     }
     await update($, now, () => at)
@@ -272,8 +286,16 @@ export const register: Register = on => {
   })
 
   // Each model request of any loop: the size of that loop's context, and for
-  // the main conversation how full its window is.
+  // the main conversation how full its window is. A request starts once the
+  // loop's calls have ended, so any still listed (one that never told its
+  // end) go as it starts.
   on('turn.step', async function* ($, e, next) {
+    const loopId = e.agentId
+    if (loopId === undefined) {
+      await update($, focus, f => (f === null || (f.calls ?? []).length === 0 ? f : withCalls(f, [])))
+    } else {
+      await update($, agents, list => list.map(a => (a.agentId === loopId && (a.calls ?? []).length > 0 ? withCalls(a, []) : a)))
+    }
     const result = yield* next(e)
     if (result.usage !== null) {
       const tokens = contextTokens(result.usage)
@@ -285,11 +307,6 @@ export const register: Register = on => {
         await update($, agents, list => list.map(a => (a.agentId === agentId ? { ...a, tokens } : a)))
       }
     }
-    // A new request from an agent: any call of its put to its person is over.
-    if (e.agentId !== undefined) {
-      const agentId = e.agentId
-      await update($, agents, list => list.map(a => (a.agentId === agentId && a.asking !== undefined ? { ...a, asking: undefined } : a)))
-    }
     if (e.agentId !== undefined) {
       await readAgentFeed($, e.agentId).catch(() => undefined)
     }
@@ -297,55 +314,58 @@ export const register: Register = on => {
     return result
   })
 
-  // Each loop's calls: the tool it runs now and how many it has made. The
+  // Each loop's calls: the ones it runs now and how many it has made; each
+  // call goes from its loop's list as it ends, whichever ends first. The
   // pane's own calls (TaskList, TaskGet) never pass its own hooks.
   on('tool.call', async ($, e, next) => {
     const agentId = e.agentId
-    const tool = e.tool
-    const doing = describeCall(e)
+    runtime.calls += 1
+    const call: RunningCall = { id: String(runtime.calls), tool: e.tool, on: describeCall(e) }
+    const end = <T extends { calls?: RunningCall[] | undefined }>(item: T) =>
+      withCalls(
+        item,
+        (item.calls ?? []).filter(one => one.id !== call.id),
+      )
     if (agentId === undefined) {
-      await update($, focus, f => (f === null || !isTurnRunning(f) ? f : { ...f, tools: (f.tools ?? 0) + 1, tool, doing }))
+      await update($, focus, f => (f === null || !isTurnRunning(f) ? f : withCalls({ ...f, tools: (f.tools ?? 0) + 1 }, [...(f.calls ?? []), call])))
       try {
         return await next(e)
       } finally {
-        await update($, focus, f => (f !== null && f.tool === tool ? { ...f, tool: undefined, doing: undefined } : f))
+        await update($, focus, f => (f === null ? f : end(f)))
       }
     }
 
     runtime.isBusy = true
     await update($, agents, list =>
-      list.map(a => (a.agentId === agentId ? { ...a, state: 'running', endedAt: undefined, tools: a.tools + 1, tool, doing } : a)),
+      list.map(a =>
+        a.agentId === agentId ? withCalls({ ...a, state: 'running', endedAt: undefined, tools: a.tools + 1 }, [...(a.calls ?? []), call]) : a,
+      ),
     )
     await readAgentFeed($, agentId).catch(() => undefined)
     try {
       return await next(e)
     } finally {
-      await update($, agents, list =>
-        list.map(a =>
-          a.agentId !== agentId
-            ? a
-            : {
-                ...a,
-                ...(a.tool === tool ? { tool: undefined, doing: undefined } : {}),
-                ...(a.asking?.tool === tool ? { asking: undefined } : {}),
-              },
-        ),
-      )
+      await update($, agents, list => list.map(a => (a.agentId === agentId ? end(a) : a)))
       await readAgentFeed($, agentId).catch(() => undefined)
     }
   })
 
   // Claude Code is about to ask the person about a subagent's call: that
-  // agent's row waits from now until the call ends. Claude Code says when it
-  // asks, not when the person answers, so an allowed call shows as waiting
-  // while it runs. The hook decides nothing: it hands the request on as it
-  // came, and leaves the answer to the person.
+  // call waits from now until it ends. Claude Code says when it asks, not
+  // when the person answers, so an allowed call shows as waiting while it
+  // runs; and a settings hook beneath that answers the request itself goes
+  // unseen. The hook decides nothing: it hands the request on as it came,
+  // and leaves the answer to the person.
   on('classic.PermissionRequest', async ($, e, next) => {
     const agentId = e.agent_id
     if (agentId !== undefined) {
-      const since = await $.clock.now()
-      const tool = e.tool_name
-      await update($, agents, list => list.map(a => (a.agentId === agentId ? { ...a, asking: { tool, since } } : a)))
+      const at = await $.clock.now()
+      const subject = describeCall(e.tool_input)
+      await update($, agents, list =>
+        list.some(a => a.agentId === agentId)
+          ? list.map(a => (a.agentId === agentId ? withCalls(a, askCall(a.calls ?? [], e.tool_name, subject, at)) : a))
+          : list,
+      )
     }
 
     return next(e)
@@ -1123,7 +1143,8 @@ async function readSessions($: EngineInterface, isAsked: boolean) {
     )
     return after
   })
-  for (const s of started) {
+  const sharedBy = await read($, shared)
+  for (const s of started.filter(one => isNotifier(selfId, one.sessionId, sharedBy))) {
     void tellWaiting($, s).catch(() => undefined)
   }
   await loadShared($, list, at).catch(() => undefined)
@@ -1206,13 +1227,14 @@ async function share($: EngineInterface) {
       startedAt: a.startedAt,
       tools: a.tools,
       tool: a.tool,
-      asking: a.asking !== undefined && at - a.asking.since >= ASK_SHOWN_MS ? a.asking.tool : undefined,
+      asking: askingOf(at, a)?.tool,
     }))
   const list = await read($, steps)
   const progress = list.length === 0 ? undefined : { done: list.filter(step => step.status === 'completed').length, total: list.length }
-  const text = JSON.stringify({ running, progress })
+  const watching = await read($, isShown)
+  const text = JSON.stringify({ running, progress, watching })
   if (text !== runtime.lastShared || at - runtime.lastSharedAt >= HEARTBEAT_MS) {
-    await $.store.set(`agents:${id}`, { at, agents: running, plan: progress })
+    await $.store.set(`agents:${id}`, { at, agents: running, plan: progress, watching })
     runtime.lastShared = text
     runtime.lastSharedAt = at
   }

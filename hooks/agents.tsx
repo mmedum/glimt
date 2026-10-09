@@ -1,7 +1,7 @@
 // This session's agents: the main conversation and its subagents as a tree.
 
 import type { ModelUsage } from 'claude-code'
-import type { Agent, AgentState, Focus } from '../types'
+import type { Agent, AgentState, Focus, RunningCall } from '../types'
 import { cells, clip, duration, fit, fitStart, minutes, spin, tokenNumber, toolName, wrap } from './text'
 import { heading } from './view'
 import type { View } from './view'
@@ -74,11 +74,33 @@ export function isStoppable(agent: Agent): boolean {
 // long, so a call the mode decides at once never flashes.
 export const ASK_SHOWN_MS = 1000
 
-// The tool a running agent waits on its person to allow, once that has
-// lasted ASK_SHOWN_MS.
-export function askingOf(view: View, agent: Agent): string | undefined {
-  const asking = agent.state === 'running' ? agent.asking : undefined
-  return asking !== undefined && view.at - asking.since >= ASK_SHOWN_MS ? asking.tool : undefined
+// A loop's calls after one starts or ends: the latest names its tool and
+// what it is on.
+export function withCalls<T extends { calls?: RunningCall[] | undefined; tool?: string | undefined; doing?: string | undefined }>(
+  item: T,
+  calls: RunningCall[],
+): T {
+  const latest = calls.at(-1)
+  return { ...item, calls, tool: latest?.tool, doing: latest?.on }
+}
+
+// The call Claude Code is about to ask the person about: of that tool, the
+// one on the same thing, else the latest not asked yet (a hook may have
+// rewritten what it is on), now waiting since `at`.
+export function askCall(calls: RunningCall[], tool: string, on: string | undefined, at: number): RunningCall[] {
+  const open = calls.filter(call => call.tool === tool && call.askedAt === undefined)
+  const asked = open.find(call => call.on === on) ?? open.at(-1)
+  return asked === undefined ? calls : calls.map(call => (call === asked ? { ...call, askedAt: at } : call))
+}
+
+// The call a running agent has waited on its person for the longest, once
+// that has lasted ASK_SHOWN_MS by `at`.
+export function askingOf(at: number, agent: Agent): RunningCall | undefined {
+  if (agent.state !== 'running') {
+    return undefined
+  }
+
+  return (agent.calls ?? []).find(call => call.askedAt !== undefined && at - call.askedAt >= ASK_SHOWN_MS)
 }
 
 // An agent's mark: ◉ while it waits on its person, the spinner while it
@@ -88,19 +110,24 @@ export function agentMark(view: View, agent: Agent): { mark: string; color: stri
     return AGENT_MARK[agent.state]
   }
 
-  return askingOf(view, agent) === undefined ? runningMark(view.at) : { mark: '◉', color: 'warning' }
+  return askingOf(view.at, agent) === undefined ? runningMark(view.at) : { mark: '◉', color: 'warning' }
 }
 
-// What its running call is on, after ⎿, led by "approve" while that call
-// waits on its person: "approve Bash · npm test".
-export function callOf(agent: Agent, asking: string | undefined, room: number): string | undefined {
-  if (agent.state !== 'running' || agent.tool === undefined) {
+// After ⎿: the call that waits on its person, "approve Bash · npm test", or
+// else the latest running call and what it is on.
+export function callOf(agent: Agent, asking: RunningCall | undefined, room: number): string | undefined {
+  if (agent.state !== 'running') {
     return undefined
   }
 
-  const tool = `${asking === undefined ? '' : 'approve '}${toolName(agent.tool)}`
+  const call = asking ?? (agent.tool === undefined ? undefined : { tool: agent.tool, on: agent.doing })
+  if (call === undefined) {
+    return undefined
+  }
+
+  const tool = `${asking === undefined ? '' : 'approve '}${toolName(call.tool)}`
   const space = room - cells(tool) - 5
-  const on = agent.doing === undefined ? '' : /^[/~]/.test(agent.doing) ? fitStart(agent.doing, space) : fit(agent.doing, space)
+  const on = call.on === undefined ? '' : /^[/~]/.test(call.on) ? fitStart(call.on, space) : fit(call.on, space)
   return on === '' ? `⎿ ${tool}` : `⎿ ${tool} · ${on}`
 }
 
@@ -185,7 +212,7 @@ export function agentLines(view: View, node: AgentNode, open: readonly string[],
   }
   // Short of room, the ⎿ lines go, so more running agents fit; one that
   // waits on its person keeps its line.
-  const asking = askingOf(view, agent)
+  const asking = askingOf(view.at, agent)
   const call = callOf(agent, asking, width)
   if (call !== undefined && (!isTight || asking !== undefined)) {
     lines.push(call)
@@ -285,7 +312,7 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
   }
   const hidden = total - kept.length
   const running = (main?.state === 'running' ? 1 : 0) + team.filter(a => a.state === 'running').length
-  const waiting = team.filter(a => askingOf(view, a) !== undefined).length
+  const waiting = team.filter(a => askingOf(view.at, a) !== undefined).length
   const count = [running > 0 ? `${running} running` : '', waiting > 0 ? `${waiting} waiting` : ''].filter(part => part !== '').join(' · ')
 
   return {

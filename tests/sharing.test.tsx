@@ -16,6 +16,7 @@ describe('sharing between sessions', () => {
     expect(store.get('agents:self-full')).toEqual({
       at: 3_605_000,
       agents: [{ id: 'a1', type: 'Explore', description: 'find loaders', task: 'Find where hooks are loaded.', startedAt: 3_600_000, tools: 0 }],
+      watching: true,
     })
     await clock.advance(25_000)
     expect(sharedAt()).toBe(3_605_000)
@@ -33,7 +34,7 @@ describe('sharing between sessions', () => {
     await setStatus($, '2', 'in_progress')
 
     await clock.advance(5_000)
-    expect(store.get('agents:self-full')).toEqual({ at: 3_605_000, agents: [], plan: { done: 1, total: 3 } })
+    expect(store.get('agents:self-full')).toEqual({ at: 3_605_000, agents: [], plan: { done: 1, total: 3 }, watching: true })
   })
 
   test("shows how far another session's plan has come on its row", async ($, on) => {

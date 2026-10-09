@@ -3,7 +3,7 @@
 
 import type { Composer, Session } from '../types'
 import { runtime } from './state'
-import { cells, fit, fitStart } from './text'
+import { cells, fit, fitStart, tildePath } from './text'
 import { keyButton, keyWidth, wrappedRows } from './view'
 import type { View } from './view'
 
@@ -109,12 +109,7 @@ export function selfSection(view: View, state: SelfState) {
   const { session, isOpen, isClearing } = state
   // Until the session list names it, the row just says what it is.
   const name = session?.name
-  const where =
-    session === undefined
-      ? ''
-      : runtime.home !== '' && session.cwd.startsWith(runtime.home)
-        ? `~${session.cwd.slice(runtime.home.length)}`
-        : session.cwd
+  const where = session === undefined ? '' : tildePath(session.cwd, runtime.home)
 
   return {
     rows: 1 + (isOpen && session !== undefined ? 1 : 0) + (isClearing ? 1 : 0),

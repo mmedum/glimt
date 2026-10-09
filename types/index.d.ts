@@ -25,8 +25,8 @@ export type AgentState = 'running' | 'done' | 'failed' | 'stopped'
 // what its running call is and what that call is on; `tokens` is the size of
 // its context: what its latest model request carried, and the reply;
 // `model` is what it runs on; `isBackground` says it runs in the background,
-// so it can be stopped from here; `asking` is a call of its put to the
-// person, the tool and since when, until that call ends.
+// so it can be stopped from here; `calls` are the calls it runs now, the
+// latest the one `tool` and `doing` name.
 export type Agent = {
   id: string
   agentId?: string | undefined
@@ -47,11 +47,16 @@ export type Agent = {
   percent?: number | undefined
   model?: string | undefined
   isBackground?: boolean | undefined
-  asking?: { tool: string; since: number } | undefined
+  calls?: RunningCall[] | undefined
 }
 
+// A call a loop runs now: an id of glimt's own, the tool, what it is on, and
+// since when it has waited on its person, while it has.
+export type RunningCall = { id: string; tool: string; on?: string | undefined; askedAt?: number | undefined }
+
 // The main conversation's latest turn: when it started and ended, how it
-// ended, the tool it runs now, how many calls it has made and its context.
+// ended, the calls it runs now (the latest named by `tool` and `doing`), how
+// many calls it has made and its context.
 export type Focus = {
   startedAt?: number | undefined
   endedAt?: number | undefined
@@ -59,6 +64,7 @@ export type Focus = {
   tools?: number | undefined
   tool?: string | undefined
   doing?: string | undefined
+  calls?: RunningCall[] | undefined
   tokens?: number | undefined
   percent?: number | undefined
 }
@@ -107,9 +113,10 @@ export type SharedAgent = {
   asking?: string | undefined
 }
 
-// What a session's glimt shares: when it last did, its running agents, and
-// how far its plan has come.
-export type Shared = { at: number; agents: SharedAgent[]; plan?: { done: number; total: number } | undefined }
+// What a session's glimt shares: when it last did, its running agents, how
+// far its plan has come, and whether its pane is drawn (so it reads the
+// session list, and may be the one to notify).
+export type Shared = { at: number; agents: SharedAgent[]; plan?: { done: number; total: number } | undefined; watching?: boolean | undefined }
 
 // The form open at the top of the pane: a new agent, here or as a new
 // background session, or a new name for a session.

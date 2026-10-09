@@ -49,7 +49,7 @@ A spinner marks whatever is working right now: a running agent, a working sessio
 
 A waiting session says what it wants: `approve` for a permission prompt, `answer` for a question. Each other session shows how long it has been in its state, counted from when glimt saw that state begin, and its name turns bold when it stops, until you open it. Where another session runs glimt, its row also shows how far its plan has come, as in `3/7`.
 
-An agent with a call waiting for your approval shows `◉` and `approve` with the tool. Claude Code tells a mod when a call is put to you, not when you answer, so the mark stays until that call ends.
+An agent with a call waiting for your approval shows `◉` and `approve` with the tool and what it runs, as in `approve Bash · git push`. Claude Code tells a mod when a call is put to you, not when you answer, so the mark stays until that call ends.
 
 ## How it works
 
@@ -82,7 +82,7 @@ Mods run with your permissions, so here is everything glimt touches. `claude plu
 - The chat, while the pane is open: task-list rows are left out, and a running agent's row is kept to one line.
 - `/glimt`, its own command, opens the pane.
 
-Its hook on Claude Code's permission request only notes which agent is being asked, and hands the request on unchanged: glimt never answers a permission. Its other hooks (tool calls, turns, agents, prompts, session start and end, focus) only read what passes, to keep the pane current, and pass it on unchanged.
+Its hook on Claude Code's permission request only notes which agent is being asked and about which call (the tool, and the command, path or address it is on), and hands the request on unchanged: glimt never answers a permission. Its other hooks (tool calls, turns, agents, prompts, session start and end, focus) only read what passes, to keep the pane current, and pass it on unchanged.
 
 The plan comes from Claude's task list. Claude Code offers that list by default only on some models, and on every model in background sessions (agent view, or `claude --bg`); see [task tool availability](https://code.claude.com/docs/en/tools-reference#task-tool-availability). To have it in a terminal session on other models, start Claude Code with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`. Without it, the plan says so and everything else works the same.
 

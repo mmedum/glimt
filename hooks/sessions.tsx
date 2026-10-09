@@ -4,7 +4,7 @@
 import type { Phase, RemoteAgent, RemoteList, Session, SessionState, Shared, SharedAgent } from '../types'
 import { TASK_LINES } from './agents'
 import { runtime } from './state'
-import { cells, clip, fit, fitStart, isRecord, minutes, spin, toolName, wrap } from './text'
+import { cells, clip, fit, fitStart, isRecord, minutes, spin, tildePath, toolName, wrap } from './text'
 import { heading } from './view'
 import type { View } from './view'
 
@@ -238,7 +238,7 @@ export function sessionSection(view: View, listing: Listing, room: number) {
 // Where a session runs, on which git branch where known, what kind it is and
 // its id: "~/code on main · background · a1b2c3d4".
 export function placeOf(s: Session, branch?: string): string {
-  const where = runtime.home !== '' && s.cwd.startsWith(runtime.home) ? `~${s.cwd.slice(runtime.home.length)}` : s.cwd
+  const where = tildePath(s.cwd, runtime.home)
   const on = branch === undefined ? '' : ` on ${branch}`
 
   return `${where}${on} · ${s.kind === 'background' ? 'background' : 'terminal'} · ${s.id ?? s.sessionId}`
@@ -410,6 +410,14 @@ export function nextPhases(before: Record<string, Phase>, list: Session[], at: n
       return [s.sessionId, phase]
     }),
   )
+}
+
+// Whether this session's glimt is the one on the machine to tell of
+// `waiting`: of the panes drawn, the one whose session id sorts first, the
+// waiting session's own left out. Every glimt reaches the same answer from
+// the shares, so one notification goes out, not one per pane.
+export function isNotifier(selfId: string | null, waiting: string, shared: Record<string, Shared>): boolean {
+  return Object.entries(shared).every(([id, share]) => share.watching !== true || id === waiting || id > (selfId ?? ''))
 }
 
 // What a notification says of a session that started waiting.

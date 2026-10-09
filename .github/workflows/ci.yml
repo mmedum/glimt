@@ -27,7 +27,8 @@ jobs:
       - run: |
           claude -p /plugin-authoring || true
           mkdir -p .claude-plugin/types/claude-code
-          cp "${TMPDIR:-/tmp}"/claude-"$(id -u)"/bundled-skills/*/*/plugin-authoring/types/claude-code.d.ts .claude-plugin/types/claude-code/index.d.ts
+          version="$(claude --version | cut -d' ' -f1)"
+          cp "${TMPDIR:-/tmp}"/claude-"$(id -u)"/bundled-skills/"$version"/*/plugin-authoring/types/claude-code.d.ts .claude-plugin/types/claude-code/index.d.ts
           echo '*' > .claude-plugin/types/.gitignore
       - run: npx --yes -p typescript@7.0.2 tsc -p . --noEmit
       - run: npx --yes oxfmt@0.72.0 --check

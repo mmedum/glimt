@@ -220,6 +220,23 @@ describe('sessions', () => {
     expect(toasts[0]?.endsWith('error: no such session')).toBe(true)
   })
 
+  test('writes the home folder as ~ only up to a folder boundary', async ($, on) => {
+    const at = (id: string, cwd: string) => ({ cwd, kind: 'interactive', startedAt: 0, sessionId: id, name: id, status: 'idle' })
+    await machine($, on, { listed: [at('s1', '/home/demo'), at('s2', '/home/demo/api'), at('s3', '/home/demox/api')] })
+    // Past this session's row onto s1, then each in turn, opened.
+    const ui = await onSession($, 1)
+    for (const id of ['s1', 's2', 's3']) {
+      await ui.press({ key: 'key-open' })
+      await ui.press({ key: 'key-down' })
+      expect(await ui.find({ key: `session-detail-${id}` })).toBeDefined()
+    }
+    const folder = async (id: string) => (await textOf(ui, `session-detail-${id}`))?.split(' · ')[0]
+
+    expect(await folder('s1')).toBe('  ⎿ ~')
+    expect(await folder('s2')).toBe('  ⎿ ~/api')
+    expect(await folder('s3')).toBe('  ⎿ /home/demox/api')
+  })
+
   test('an opened session shows its folder, kind and id', async ($, on) => {
     await machine($, on)
     const ui = await onSession($, 3)
@@ -373,6 +390,32 @@ describe('notifications', () => {
     await clock.advance(10_000)
     expect(sent).toEqual(['release-notes needs your approval'])
     expect(toasts).toEqual([])
+  })
+
+  test('leaves the notification to a drawn pane whose session id sorts first', async ($, on) => {
+    const sent = notifications(on)
+    const relisted = { current: undefined as unknown }
+    // docs-site's glimt (1879e383-full sorts before self-full) has its pane drawn.
+    const stored = { 'agents:1879e383-full': { at: 3_600_000, agents: [], watching: true } }
+    const { clock } = await machine($, on, { listed: WORKING, relisted, stored })
+
+    relisted.current = ASKING
+    await clock.advance(10_000)
+    expect(sent).toEqual([])
+  })
+
+  test("notifies when the panes that sort first are not drawn, or are the waiting session's own", async ($, on) => {
+    const sent = notifications(on)
+    const relisted = { current: undefined as unknown }
+    const stored = {
+      'agents:1879e383-full': { at: 3_600_000, agents: [], watching: false },
+      'agents:d3d04fc1-full': { at: 3_600_000, agents: [], watching: true },
+    }
+    const { clock } = await machine($, on, { listed: WORKING, relisted, stored })
+
+    relisted.current = ASKING
+    await clock.advance(10_000)
+    expect(sent).toEqual(['release-notes needs your approval'])
   })
 
   test('leaves alone a session already waiting at the first read, and one in a terminal of its own', async ($, on) => {

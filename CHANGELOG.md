@@ -4,6 +4,15 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-09
+
+### Fixed
+
+- Each running call is followed on its own: an agent's ⎿ line shows the call still running when another ends first, and an approval mark ends with the call it belongs to, also when a hook rewrote the command or two calls wait at once.
+- A session folder is written with `~` only when it is inside the home folder, not one that merely starts with its name.
+- With glimt open in several terminals, a background session that starts waiting raised one notification per pane; now only one glimt on the machine notifies.
+- CI copies the API types of the installed Claude Code version only.
+
 ## [0.3.1] - 2026-10-09
 
 ### Fixed
@@ -50,7 +59,8 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 - New agents here (`n`) or as a background session (`s`), rename (`r`), clear (`c`), attach (`a`) and stop (`x`).
 - The key list (`i`), a spinner on whatever is working with still marks for the rest, and a layout that keeps the sessions in place while agents come and go.
 
-[Unreleased]: https://github.com/mmedum/glimt/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/mmedum/glimt/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/mmedum/glimt/releases/tag/v0.3.2
 [0.3.1]: https://github.com/mmedum/glimt/releases/tag/v0.3.1
 [0.3.0]: https://github.com/mmedum/glimt/releases/tag/v0.3.0
 [0.2.0]: https://github.com/mmedum/glimt/releases/tag/v0.2.0

@@ -31,7 +31,7 @@ export function tokenNumber(tokens: number): string {
 export const CALL_FIELDS = ['command', 'file_path', 'notebook_path', 'path', 'pattern', 'url', 'query', 'description', 'subject', 'prompt']
 
 // What a call is on, from the first of those fields it has: its first line.
-export function describeCall(input: object): string | undefined {
+export function describeCall(input: unknown): string | undefined {
   const fields = isRecord(input) ? input : {}
   for (const name of CALL_FIELDS) {
     const value = fields[name]
@@ -150,6 +150,16 @@ export function modelName(id: string): string {
   }
 
   return `${family.charAt(0).toUpperCase()}${family.slice(1)} ${major}${minor === undefined ? '' : `.${minor}`}`
+}
+
+// A folder under the home folder from ~: "/home/demo/code" is "~/code", while
+// "/home/demox" stays as it is.
+export function tildePath(path: string, home: string): string {
+  if (home === '' || (path !== home && !path.startsWith(`${home}/`))) {
+    return path
+  }
+
+  return `~${path.slice(home.length)}`
 }
 
 // mcp__server__tool reads as tool.

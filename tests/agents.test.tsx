@@ -383,6 +383,7 @@ describe('waiting on approval', () => {
     loops(on)
     // Beneath the plugins, the request goes on to the person's dialog.
     on('classic.PermissionRequest', () => ({}))
+    modelRequests(on)
     const releases: (() => void)[] = []
     on('tool.call', { tool: 'Bash' }, () => new Promise(resolve => releases.push(() => resolve({ result: {} }))))
     const stored = new Map<string, unknown>()
@@ -398,7 +399,7 @@ describe('waiting on approval', () => {
     // session raises it while the call waits.
     const check = (agentId: string, command: string) => $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command }, agent_id: agentId })
 
-    return { clock, stored, check, release: () => releases.forEach(release => release()) }
+    return { clock, stored, check, releases, release: () => releases.forEach(release => release()) }
   }
 
   test('marks an agent waiting once a call of its has waited a second on its person, until the call ends', async ($, on) => {
@@ -424,23 +425,143 @@ describe('waiting on approval', () => {
   test('hands a permission request on exactly as it came, for the person to answer', async ($, on) => {
     mock.clock(on)
     loops(on)
-    on('classic.PermissionRequest', () => ({ decision: { behavior: 'deny' as const, message: 'not now' } }))
+    const reached: unknown[] = []
+    on('classic.PermissionRequest', (_$, e) => {
+      reached.push(e)
+      return { decision: { behavior: 'deny' as const, message: 'not now' } }
+    })
     await spawn($, 'a1', 'find loaders')
 
-    const answer = await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'git push' }, agent_id: 'a1' })
+    const raised = {
+      tool_name: 'Bash',
+      tool_input: { command: 'git push' },
+      agent_id: 'a1',
+      permission_suggestions: [
+        {
+          type: 'addRules' as const,
+          rules: [{ toolName: 'Bash', ruleContent: 'git push' }],
+          behavior: 'allow' as const,
+          destination: 'session' as const,
+        },
+      ],
+    }
+    const answer = await $.classic.PermissionRequest(raised)
+    expect(reached.length).toBe(1)
+    expect(reached[0]).toMatchObject(raised)
     expect(answer).toEqual({ decision: { behavior: 'deny', message: 'not now' } })
   })
 
-  test('never marks an agent whose call nobody is asked about', async ($, on) => {
+  test('leaves an agent alone when the main conversation, or another agent, is asked', async ($, on) => {
     const { clock, release } = await asking($, on)
     await spawn($, 'a1', 'find loaders')
+    await spawn($, 'a2', 'review the diff')
     const ui = await mount($)
     const call = $.tool.call(inAgent({ tool: 'Bash', command: 'npm test' }, 'a1'))
+    await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'npm test' } })
+    await $.classic.PermissionRequest({ tool_name: 'Bash', tool_input: { command: 'npm test' }, agent_id: 'a2' })
     await clock.advance(2_000)
 
     expect(await textOf(ui, 'agent-a1')).toBe('▸ ⠋ Explore find loaders <1m · 1 tool   ⎿ Bash · npm test')
     release()
     await call
+  })
+
+  test('keeps waiting while the asked call runs, though another call of the same tool ends', async ($, on) => {
+    const { clock, check, releases } = await asking($, on)
+    await spawn($, 'a1', 'find loaders')
+    const ui = await mount($)
+    const list = $.tool.call(inAgent({ tool: 'Bash', command: 'ls' }, 'a1'))
+    const push = $.tool.call(inAgent({ tool: 'Bash', command: 'git push' }, 'a1'))
+    await check('a1', 'git push')
+    await clock.advance(1_000)
+
+    // ls ends first; git push still waits on its person.
+    releases[0]?.()
+    await list
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ◉ Explore find loaders <1m · 2 tools   ⎿ approve Bash · git push')
+    releases[1]?.()
+    await push
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ⠋ Explore find loaders <1m · 2 tools')
+  })
+
+  test('marks the call even when a hook changed what it runs before Claude Code asks', async ($, on) => {
+    const { clock, check, release } = await asking($, on)
+    await spawn($, 'a1', 'find loaders')
+    const ui = await mount($)
+    const call = $.tool.call(inAgent({ tool: 'Bash', command: 'git status' }, 'a1'))
+    await check('a1', 'rtk git status')
+    await clock.advance(1_000)
+
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ◉ Explore find loaders <1m · 1 tool   ⎿ approve Bash · git status')
+    release()
+    await call
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ⠋ Explore find loaders <1m · 1 tool')
+  })
+
+  test('keeps waiting while one of two asked calls is still open', async ($, on) => {
+    const { clock, check, releases } = await asking($, on)
+    await spawn($, 'a1', 'find loaders')
+    const ui = await mount($)
+    const first = $.tool.call(inAgent({ tool: 'Bash', command: 'git push' }, 'a1'))
+    const second = $.tool.call(inAgent({ tool: 'Bash', command: 'npm publish' }, 'a1'))
+    await check('a1', 'git push')
+    await clock.advance(500)
+    await check('a1', 'npm publish')
+    await clock.advance(500)
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ◉ Explore find loaders <1m · 2 tools   ⎿ approve Bash · git push')
+
+    // The first is answered and ends; the second has waited a second too.
+    releases[0]?.()
+    await first
+    await clock.advance(500)
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ◉ Explore find loaders <1m · 2 tools   ⎿ approve Bash · npm publish')
+    releases[1]?.()
+    await second
+  })
+
+  test('two identical calls both asked: when one ends, the other still waits', async ($, on) => {
+    const { clock, check, releases } = await asking($, on)
+    await spawn($, 'a1', 'find loaders')
+    const ui = await mount($)
+    const first = $.tool.call(inAgent({ tool: 'Bash', command: 'git push' }, 'a1'))
+    const second = $.tool.call(inAgent({ tool: 'Bash', command: 'git push' }, 'a1'))
+    await check('a1', 'git push')
+    await check('a1', 'git push')
+    await clock.advance(1_000)
+
+    releases[0]?.()
+    await first
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ◉ Explore find loaders <1m · 2 tools   ⎿ approve Bash · git push')
+    releases[1]?.()
+    await second
+  })
+
+  test("drops an agent's calls as its next model request starts, should one never tell its end", async ($, on) => {
+    const { clock, check } = await asking($, on)
+    await spawn($, 'a1', 'find loaders')
+    const ui = await mount($)
+    void $.tool.call(inAgent({ tool: 'Bash', command: 'git push' }, 'a1'))
+    await check('a1', 'git push')
+    await clock.advance(1_000)
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ◉ Explore find loaders <1m · 1 tool   ⎿ approve Bash · git push')
+
+    await modelRequest($, 'a1')
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ⠋ Explore find loaders <1m · 1 tool · 0 tokens')
+  })
+
+  test('shows the call still running when another call of the same tool ends first', async ($, on) => {
+    const { clock, releases } = await asking($, on)
+    await spawn($, 'a1', 'find loaders')
+    const ui = await mount($)
+    const read = $.tool.call(inAgent({ tool: 'Bash', command: 'npm test' }, 'a1'))
+    const list = $.tool.call(inAgent({ tool: 'Bash', command: 'ls' }, 'a1'))
+    await clock.advance(0)
+
+    releases[1]?.()
+    await list
+    expect(await textOf(ui, 'agent-a1')).toBe('▸ ⠋ Explore find loaders <1m · 2 tools   ⎿ Bash · npm test')
+    releases[0]?.()
+    await read
   })
 
   test("short of room, keeps the approve line of a waiting agent while other agents' ⎿ lines go", async ($, on) => {
@@ -474,6 +595,7 @@ describe('waiting on approval', () => {
       agents: [
         { id: 'a1', type: 'Explore', description: 'find loaders', task: 'find loaders', startedAt: 0, tools: 1, tool: 'Bash', asking: 'Bash' },
       ],
+      watching: true,
     })
     release()
     await call
