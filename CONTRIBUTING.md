@@ -1,6 +1,8 @@
 # Contributing to glimt
 
-Thank you for helping. glimt is small and quiet on purpose, so a change starts as an issue: for anything past a typo, [open one](https://github.com/mmedum/glimt/issues) first, so we agree on the shape before you write code.
+Thank you for helping. Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
+
+glimt is small and quiet on purpose, so a change starts as an issue: for anything past a typo, [open one](https://github.com/mmedum/glimt/issues) first, so we agree on the shape before you write code.
 
 ## Run it from your clone
 
