@@ -11,7 +11,7 @@ _glimt_ is Danish for a glimpse, a brief flash of light. Say it like _glimpse_ w
 
 Its icon says what it does: everything stays in line; the one that needs you steps out.
 
-![glimt beside a session: this session, Now, the plan with its steps, two agents at work, and three other sessions](docs/screenshot.png)
+![glimt beside a session: this session, Now, the plan with its steps, two agents at work, and three other sessions, one waiting for approval](docs/screenshot.png)
 
 ## Install
 
