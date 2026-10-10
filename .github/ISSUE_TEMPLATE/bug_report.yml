@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in glimt doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: A screenshot of the pane helps.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      placeholder: |
+        1. Open the pane with /glimt
+        2. ...
+  - type: input
+    id: glimt
+    attributes:
+      label: glimt version
+      description: '`claude plugin list` shows it.'
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Code version
+      description: '`claude --version` shows it.'
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal and operating system
+      placeholder: Ghostty on Linux
+  - type: textarea
+    id: log
+    attributes:
+      label: Debug log
+      description: With `claude --debug`, the lines that start with `glimt:`.
+      render: text

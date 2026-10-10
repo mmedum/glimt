@@ -32,6 +32,9 @@ jobs:
           echo '*' > .claude-plugin/types/.gitignore
       - run: npx --yes -p typescript@7.0.2 tsc -p . --noEmit
       - run: npx --yes oxfmt@0.72.0 --check
+      # The Markdown: README, CHANGELOG, CONTRIBUTING, SECURITY and the pull
+      # request template (.markdownlint-cli2.jsonc).
+      - run: npx --yes markdownlint-cli2@0.23.3
       # oxlint's type-aware rules run on typescript-go: bump oxlint-tsgolint
       # together with typescript above.
       - run: npx --yes -p oxlint@1.87.0 -p oxlint-tsgolint@7.0.2003 oxlint --type-aware --deny-warnings hooks tests

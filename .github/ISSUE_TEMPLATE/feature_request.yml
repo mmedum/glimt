@@ -1,0 +1,20 @@
+name: Idea
+description: Something glimt could show or do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What would it help you with?
+      description: The situation, not the solution. glimt stays quiet, so what you'd want it to show and when matters most.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+  - type: textarea
+    id: elsewhere
+    attributes:
+      label: Seen elsewhere
+      description: A tool that does this well, if you know one.

@@ -1,0 +1,13 @@
+{
+  // Prose lines run as long as their paragraph; Keep a Changelog repeats
+  // Added, Changed and Fixed under each version; the README's logo is a
+  // <picture> with a light and a dark source; a pull request's body, from
+  // its template, has no title of its own.
+  "config": {
+    "MD013": false,
+    "MD024": { "siblings_only": true },
+    "MD033": { "allowed_elements": ["h1", "picture", "source", "img"] },
+    "MD041": false,
+  },
+  "globs": ["*.md", ".github/**/*.md"],
+}

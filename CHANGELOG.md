@@ -81,7 +81,9 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 - New agents here (`n`) or as a background session (`s`), rename (`r`), clear (`c`), attach (`a`) and stop (`x`).
 - The key list (`i`), a spinner on whatever is working with still marks for the rest, and a layout that keeps the sessions in place while agents come and go.
 
-[Unreleased]: https://github.com/mmedum/glimt/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/mmedum/glimt/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/mmedum/glimt/releases/tag/v0.5.0
+[0.4.0]: https://github.com/mmedum/glimt/releases/tag/v0.4.0
 [0.3.2]: https://github.com/mmedum/glimt/releases/tag/v0.3.2
 [0.3.1]: https://github.com/mmedum/glimt/releases/tag/v0.3.1
 [0.3.0]: https://github.com/mmedum/glimt/releases/tag/v0.3.0
