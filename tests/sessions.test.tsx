@@ -150,6 +150,23 @@ describe('sessions', () => {
     expect(await isBold()).toBe(false)
   })
 
+  test('draws an idle session in bold in the terminal text color, and quiet once seen', async ($, on) => {
+    const relisted = { current: undefined as unknown }
+    const { clock } = await machine($, on, { listed: DOCS_BUSY, relisted })
+    const ui = await mount($)
+    const rowColor = async () => {
+      const row = (await ui.findAll({ type: 'Text' })).find(text => text.text === ' ○ docs-site')
+      return row === undefined ? 'no row' : (row.props.color ?? 'none')
+    }
+
+    relisted.current = LISTED
+    await clock.advance(5_000)
+    expect(await rowColor()).toBe('none')
+    await ui.press({ key: 'toggle-session-1879e383-full' })
+    await ui.press({ key: 'toggle-session-1879e383-full' })
+    expect(await rowColor()).toBe('inactive')
+  })
+
   test('keeps a reaction another glimt shared after that glimt is gone', async ($, on) => {
     const relisted = { current: undefined as unknown }
     const { clock, store } = await machine($, on, { listed: DOCS_BUSY, relisted })
