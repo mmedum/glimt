@@ -4,6 +4,12 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-11
+
+### Fixed
+
+- After `l` into an agent or a session, the keys the key row shows were often typed into the message field instead of acting. When what the pane draws changes, Claude Code keeps its focus ring at the same place among the pane's elements, and that place could be the field. The ring now goes onto the way back (`← Overview`), and the field takes the keyboard only when you press `m` or Tab onto it.
+
 ## [0.6.2] - 2026-10-11
 
 ### Added
@@ -122,7 +128,8 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 - New agents here (`n`) or as a background session (`s`), rename (`r`), clear (`c`), attach (`a`) and stop (`x`).
 - The key list (`i`), a spinner on whatever is working with still marks for the rest, and a layout that keeps the sessions in place while agents come and go.
 
-[Unreleased]: https://github.com/mmedum/glimt/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/mmedum/glimt/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/mmedum/glimt/releases/tag/v0.6.3
 [0.6.2]: https://github.com/mmedum/glimt/releases/tag/v0.6.2
 [0.6.1]: https://github.com/mmedum/glimt/releases/tag/v0.6.1
 [0.6.0]: https://github.com/mmedum/glimt/releases/tag/v0.6.0

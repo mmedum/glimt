@@ -904,6 +904,11 @@ async function goInto($: EngineInterface) {
 
   await update($, feed, () => null)
   await update($, opened, trail => [...trail, step])
+  // When what the pane draws changes, Claude Code keeps its focus ring at
+  // the same place among the pane's elements, which can be the message field:
+  // the keys the key row shows would be typed there. The ring goes onto the
+  // way back instead, as h puts it back on the row it came from.
+  await $.ui.focus({ requestId: PANE, key: 'back' }).catch(() => undefined)
   if (step.kind === 'session') {
     await markSeen($, step.sessionId)
     await readRemote($, [step.sessionId]).catch(() => undefined)
