@@ -1,7 +1,7 @@
 // What every test file shares: the pane mounted as a terminal docks it, and
 // the engine's side of tasks, turns and agents.
 
-import type { Engine } from 'claude-code/testing'
+import type { Engine, Plugin } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 export const SURFACES = ['terminal', 'desktop'] as const
@@ -9,18 +9,41 @@ export type Surface = (typeof SURFACES)[number]
 
 export type PaneSize = { surface?: Surface; columns?: number; rows?: number; placement?: 'dock' | 'inline'; isFocused?: boolean }
 
+// The size each mounted pane was drawn at, for setFocus to draw it again.
+const sizes = new WeakMap<object, PaneSize>()
+
 // The pane as a terminal docks it: `columns` wide and `rows` tall.
-export function mount($: Engine, { surface = 'terminal', columns = 72, rows = 40, placement = 'dock', isFocused = false }: PaneSize = {}) {
-  return $.ui.mount({
-    plugin: 'glimt',
-    surface,
-    component: 'Pane',
-    requestId: 'glimt',
-    props: { title: 'glimt', isFocused, bodyColumns: columns, placement, scroll: { offset: 0, bodyRows: rows }, view: {} },
-  })
+export async function mount($: Engine, { surface = 'terminal', ...size }: PaneSize = {}) {
+  const ui = await $.ui.mount({ plugin: 'glimt', surface, component: 'Pane', requestId: 'glimt', props: paneProps(size) })
+  sizes.set(ui, size)
+
+  return ui
+}
+
+function paneProps({ columns = 72, rows = 40, placement = 'dock', isFocused = false }: PaneSize) {
+  return { title: 'glimt', isFocused, bodyColumns: columns, placement, scroll: { offset: 0, bodyRows: rows }, view: {} }
 }
 
 export type Mounted = Awaited<ReturnType<typeof mount>>
+
+// The person gives the pane the keyboard (ctrl+x tab), or gives it back to
+// the prompt (Esc): Claude Code draws the pane again, at the size it was
+// mounted at.
+export function setFocus(ui: Mounted, isFocused: boolean) {
+  return ui.redraw(paneProps({ ...sizes.get(ui), isFocused }))
+}
+
+// Closes the pane as any plugin's $.ui.close does, the close mark's way in:
+// through glimt's ui.close hook, which glimt's own q never reaches.
+export const CLOSER: Plugin = {
+  name: 'closer',
+  register: on => {
+    on('command.run', { command: 'close-glimt' }, async $ => {
+      await $.ui.close({ id: 'glimt' })
+      return {}
+    })
+  },
+}
 
 // Claude Code's focus ring beneath glimt: a move lands where it is asked.
 export function focusRing(on: On) {

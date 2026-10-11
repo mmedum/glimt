@@ -1,7 +1,8 @@
 import type { AgentInfo, On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
-import type { Engine, Plugin } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 import {
+  CLOSER,
   LONG_CLOCK,
   ask,
   finish,
@@ -391,17 +392,6 @@ describe('chat', () => {
     expect((await failed.find({ type: 'Text' }))?.text).toBe('engine row')
   })
 
-  // Closes the pane as any plugin's $.ui.close does, the close mark's way in.
-  const CLOSER: Plugin = {
-    name: 'closer',
-    register: on => {
-      on('command.run', { command: 'close-glimt' }, async $ => {
-        await $.ui.close({ id: 'glimt' })
-        return {}
-      })
-    },
-  }
-
   const PRESENTATION = { origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } } as const
 
   test('draws the rows as usual while the pane waits for room, and once it is closed', { plugins: [CLOSER] }, async ($, on) => {
@@ -421,6 +411,22 @@ describe('chat', () => {
     await shown.unmount()
 
     await $.command.run({ command: 'close-glimt', args: '', ...PRESENTATION })
+    const closed = await row($, 'TaskCreate')
+    expect((await closed.find({ type: 'Text' }))?.text).toBe('engine row')
+  })
+
+  // An escaped bug: q closes the pane with glimt's own $.ui.close, which
+  // doesn't run glimt's own ui.close hook, so the chat went on leaving rows
+  // out.
+  test('draws the rows as usual once q in the key list closed the pane', async ($, on) => {
+    mock.clock(on)
+    engineRows(on)
+    on('ui.close', () => ({ value: undefined }))
+    await startSession($, on)
+    const ui = await mount($, { isFocused: true })
+
+    await ui.press({ key: 'key-help' })
+    await ui.press({ key: 'help-close' })
     const closed = await row($, 'TaskCreate')
     expect((await closed.find({ type: 'Text' }))?.text).toBe('engine row')
   })

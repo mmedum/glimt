@@ -3,7 +3,7 @@
 
 import type { Plan, Step, StepStatus } from '../types'
 import { clip, duration, fit, spin, wrap } from './text'
-import { heading } from './view'
+import { cursorStyle, heading } from './view'
 import type { View } from './view'
 
 // How far a sub-step is indented under its step, per level.
@@ -262,16 +262,16 @@ export function planSection(view: View, approved: Plan | null, list: Step[], lin
         const indent = ' '.repeat(depth * INDENT)
         const isOpen = detail.length > 0
         const { mark, color } = stepMark(view, step.status)
+        const cursor = cursorStyle(view, `toggle-${step.id}`)
 
         return (
           <Box key={`step-${step.id}`} flexDirection="column">
-            <Box flexDirection="row">
+            <Box flexDirection="row" {...cursor.row}>
               {indent !== '' && <Text>{indent}</Text>}
               <Button key={`toggle-${step.id}`} plain label={isOpen ? '▾' : '▸'} onPress={() => view.toggle(step.id)} />
               <Text {...(step.status === 'completed' ? { color: quiet } : {})} bold={step.status === 'in_progress'}>
                 {' '}
-                <Text color={color}>{mark}</Text>{' '}
-                <Text inverse={view.cursor === `toggle-${step.id}`}>{fit(step.subject, view.columns - 4 - indent.length)}</Text>
+                <Text color={color}>{mark}</Text> <Text {...cursor.name}>{fit(step.subject, view.columns - 4 - indent.length)}</Text>
               </Text>
             </Box>
             {isOpen && (

@@ -126,6 +126,7 @@ export const register: Register = (on, options) => {
     quiet: colorOf(options.quietColor, 'inactive'),
     mark: colorOf(options.markColor, 'inactive'),
     heading: colorOf(options.headingColor, undefined),
+    band: colorOf(options.bandColor, 'userMessageBackground'),
   }
 
   // The command last: a refused registration then leaves the pane and its clock running.
@@ -168,12 +169,16 @@ export const register: Register = (on, options) => {
     return {}
   })
 
+  // Unless a hook refused the close, the pane forgets (see forgetPane). A
+  // hook that keeps glimt's pane open by answering without next, rather than
+  // with a deny, can't be told apart: a rare case, accepted.
   on('ui.close', async ($, e, next) => {
-    if (e.id === PANE) {
-      await update($, isShown, () => false)
+    const answered = await next(e)
+    if (e.id === PANE && answered.deny === undefined) {
+      await forgetPane($)
     }
 
-    return next(e)
+    return answered
   })
 
   // Tab and the arrows move Claude Code's focus ring; the cursor follows it
@@ -517,6 +522,25 @@ export const register: Register = (on, options) => {
     const list = await read($, steps)
     const team = await read($, agents)
     const open = await read($, expanded)
+    // Esc hands the keyboard back to the prompt and raises nothing else:
+    // drawn without the keyboard, a form shows no more, and the clock's next
+    // frame closes it (a drawing may not write); drawn with the keyboard
+    // again before that frame, it stays. Only the terminal holds the
+    // keyboard: another surface drawing the pane says nothing about it.
+    if (e.surface === 'terminal') {
+      if (e.props.isFocused) {
+        runtime.hasLostKeyboard = false
+      } else if (runtime.isFocused) {
+        runtime.hasLostKeyboard = true
+      }
+      runtime.isFocused = e.props.isFocused
+    }
+    const form = e.props.isFocused ? await read($, composer) : null
+    // The rows hold the keyboard while the pane does and no form of glimt's
+    // is open; the cursor's row, the keys and h follow it. Claude Code can't
+    // say reliably where its focus ring is, so typing in the message field
+    // inside an agent or a session leaves the row inverse, as before 0.6.2.
+    const holdsRows = e.props.isFocused && form === null
     const view: View = {
       ui,
       Input: 'Input' in ui ? ui.Input : undefined,
@@ -524,6 +548,7 @@ export const register: Register = (on, options) => {
       at: await read($, now),
       isTurnRunning: isTurnRunning(request),
       cursor: await read($, cursor),
+      isFocused: holdsRows,
       toggle: key => void toggle($, key),
       colors,
     }
@@ -538,7 +563,7 @@ export const register: Register = (on, options) => {
     const pointedAgent = team.find(a => view.cursor === `toggle-agent-${a.id}`)
     const isOnSelf = view.cursor === 'toggle-self'
     const renameTarget = isOnSelf ? selfId : pointed !== undefined && sharedBy[pointed.sessionId] !== undefined ? pointed.sessionId : null
-    const keys = e.props.isFocused
+    const keys = holdsRows
       ? keySection(
           view,
           {
@@ -572,11 +597,6 @@ export const register: Register = (on, options) => {
       isSameFolder: selfSession !== undefined && folders.has(selfSession.cwd),
       engine: await read($, engine),
     })
-    // Esc in the form's field hands the keyboard back to the prompt and raises
-    // nothing else: drawn without the keyboard, the form shows no more, and
-    // the clock's next frame closes it (a drawing may not write).
-    runtime.isFocused = e.props.isFocused
-    const form = e.props.isFocused ? await read($, composer) : null
     const formRows = form === null ? 0 : FORM_ROWS
     const formNode =
       form === null
@@ -607,7 +627,13 @@ export const register: Register = (on, options) => {
           {helpSection(view, {
             spawn: () => void leave(() => openComposer($, { kind: 'spawn', where: 'here' })),
             session: () => void leave(() => openComposer($, { kind: 'spawn', where: 'session' })),
-            close: () => void leave(() => $.ui.close({ id: PANE })),
+            // glimt's own close passes no ui.close hook of its own; refused,
+            // the pane stays as it was, the key list too.
+            close: () =>
+              void $.ui.close({ id: PANE }).then(
+                () => forgetPane($),
+                () => undefined,
+              ),
             back: () => void update($, help, () => false),
           })}
         </Box>
@@ -639,7 +665,7 @@ export const register: Register = (on, options) => {
         open,
         feed: await read($, feed),
         asked: await read($, stopping),
-        isFocused: e.props.isFocused && formNode === undefined,
+        isFocused: holdsRows,
         room: rows === undefined ? undefined : rows - formRows,
         act: {
           back: () => void goBack($),
@@ -780,6 +806,24 @@ async function openPane($: EngineInterface, isAsked = false) {
   const pane = { id: PANE, title: 'glimt' }
   const shown = await $.ui.open(isAsked ? { ...pane, focus: true as const } : pane)
   await update($, isShown, () => shown.isPlaced)
+}
+
+// The pane closed, by its close mark, ctrl+x x or q: the chat shows all of
+// itself again, and the pane forgets its cursor, the agent or session it was
+// in, a form left open, the key list, and a clear or a stop waiting for y or
+// n. Opened again, it starts on the overview, as Claude Code's focus ring
+// starts afresh, and a band left on a row from before would mark nothing.
+async function forgetPane($: EngineInterface) {
+  runtime.isFocused = false
+  runtime.hasLostKeyboard = false
+  await update($, isShown, () => false)
+  await update($, cursor, () => null)
+  await update($, opened, () => [])
+  await update($, feed, () => null)
+  await update($, composer, () => null)
+  await update($, help, () => false)
+  await update($, clearing, () => false)
+  await update($, stopping, () => null)
 }
 
 // A resumed session already holds a task list: read it once, so the plan
@@ -1561,9 +1605,13 @@ async function sendMessage($: EngineInterface, to: { sessionId: string } | { age
 // included. Idle, it looks once a second, and moves only while a step is in
 // progress or another session is listed, so their ages count on.
 async function tick($: EngineInterface) {
-  // A form left open by Esc, the pane no longer holding the keyboard, closes.
-  if (!runtime.isFocused && (await read($, composer)) !== null) {
-    await update($, composer, () => null)
+  // The pane gave up the keyboard (Esc) and hasn't got it back: a form left
+  // open closes.
+  if (runtime.hasLostKeyboard) {
+    runtime.hasLostKeyboard = false
+    if ((await read($, composer)) !== null) {
+      await update($, composer, () => null)
+    }
   }
   runtime.ticks += 1
   if (!runtime.isBusy && runtime.ticks % 10 !== 0) {

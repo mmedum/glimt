@@ -6,7 +6,7 @@ import { runtime } from './state'
 import { LIMIT_LOUD, LIMIT_SHOWN, limitText } from './sessions'
 import { cells, fit, fitParts, fitStart, minutes, modelName, tildePath } from './text'
 import type { Part } from './text'
-import { keyButton, keyWidth, partsNode, wrappedRows } from './view'
+import { cursorStyle, keyButton, keyWidth, partsNode, wrappedRows } from './view'
 import type { View } from './view'
 
 export type Keys = Record<'into' | 'spawn' | 'help' | 'rename' | 'clear' | 'attach' | 'stop', () => void>
@@ -140,16 +140,17 @@ export function selfSection(view: View, state: SelfState) {
   const where = session === undefined ? '' : tildePath(session.cwd, runtime.home)
   const status = selfStatus(view, state)
   const use = engine === null ? '' : ` · ${modelName(engine.model)}${engine.effort === undefined ? '' : ` · ${engine.effort} effort`}`
+  const cursor = cursorStyle(view, 'toggle-self')
 
   return {
     rows: 1 + (status.length > 0 ? 1 : 0) + (isOpen && session !== undefined ? 1 : 0) + (isClearing ? 1 : 0),
     node: (
       <Box key="self" flexDirection="column">
-        <Box flexDirection="row">
+        <Box flexDirection="row" {...cursor.row}>
           <Button key="toggle-self" plain label={isOpen ? '▾' : '▸'} onPress={() => view.toggle('self')} />
           <Text>
             {' '}
-            <Text bold inverse={view.cursor === 'toggle-self'}>
+            <Text bold {...cursor.name}>
               {fit(name ?? 'this session', view.columns - 16)}
             </Text>
             {name !== undefined && <Text color={view.colors.quiet}>{'  this session'}</Text>}

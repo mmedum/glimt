@@ -9,15 +9,18 @@ export type InputElement = ElementTable<'terminal' | 'desktop'>['Input']
 
 // The color options, each a theme role or a color (see paint.ts): the quiet
 // text, the marks that carry no status (a step to do, another session idle
-// or done, or one of its agents gone quiet) and the headings, without one
-// bold in the terminal's own text color; the status marks keep the theme's
-// colors. Quiet text goes without dimColor, which would win over its color.
-// A Button takes no color, so the keys stay dimColor: the theme's inactive.
-export type Colors = { quiet: string; mark: string; heading: string | undefined }
+// or done, or one of its agents gone quiet), the headings, without one bold
+// in the terminal's own text color, and the band behind the cursor's row
+// while the pane doesn't hold the keyboard; the status marks keep the
+// theme's colors. Quiet text goes without dimColor, which would win over its
+// color. A Button takes no color, so the keys stay dimColor: the theme's
+// inactive.
+export type Colors = { quiet: string; mark: string; heading: string | undefined; band: string }
 
 // What drawing needs beside the state: the elements (an Input where the
-// surface has one), the width, the time, the toggle the cursor is on, what
-// pressing a toggle does, and the colors.
+// surface has one), the width, the time, the toggle the cursor is on,
+// whether the pane's rows hold the keyboard (the pane does, and no form of
+// glimt's is open), what pressing a toggle does, and the colors.
 export type View = {
   ui: Ui
   Input?: InputElement | undefined
@@ -25,8 +28,22 @@ export type View = {
   at: number
   isTurnRunning: boolean
   cursor: string | null
+  isFocused: boolean
   toggle: (id: string) => void
   colors: Colors
+}
+
+// The row whose toggle is `key`, while the cursor is on it: its name inverse
+// while the rows hold the keyboard. Without it, the row you left keeps a
+// quiet band across the pane in the Cursor band color, by default the
+// theme's background behind your messages, as Neovim keeps a side panel's
+// cursor line and lazygit its inactive selection, so it doesn't compete with
+// the prompt or the form you type in. `row` goes on the row's Box, `name` on
+// the Text of its name.
+export function cursorStyle({ cursor, isFocused, colors }: View, key: string): { row: { backgroundColor?: string }; name: { inverse?: boolean } } {
+  const isOn = cursor === key
+
+  return { row: isOn && !isFocused ? { backgroundColor: colors.band } : {}, name: isOn && isFocused ? { inverse: true } : {} }
 }
 
 // A section's heading: its label, bold, in the Heading color where one is

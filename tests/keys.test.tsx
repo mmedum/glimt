@@ -1,8 +1,26 @@
 import type { On } from 'claude-code'
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
-import { ask, create, finish, focusRing, inAgent, loops, mount, moveTo, prompts, spawn, startSession, stepOrder, taskTools, textOf } from './kit'
-import type { PaneSize } from './kit'
+import {
+  CLOSER,
+  ask,
+  create,
+  finish,
+  focusRing,
+  inAgent,
+  loops,
+  mount,
+  moveTo,
+  prompts,
+  setFocus,
+  spawn,
+  startSession,
+  stepOrder,
+  taskTools,
+  textOf,
+} from './kit'
+import type { Mounted, PaneSize } from './kit'
+import { AGENTS_MACHINE, machine } from './machine'
 
 describe('keys', () => {
   // A pane with two steps and an agent, focused; `highlighted` reads what
@@ -62,6 +80,29 @@ describe('keys', () => {
     // At 27 they just fit on one row, and the plan has 5.
     const fitting = await mount($, { columns: 27, rows: 19, isFocused: true })
     expect(await stepOrder(fitting)).toEqual(['step-1', 'step-2', 'step-3', 'step-4', 'step-5'])
+  })
+
+  test('keeps a form opened once the pane got the keyboard back before the next frame', async ($, on) => {
+    const clock = mock.clock(on)
+    await startSession($, on)
+    const ui = await mount($, { isFocused: true })
+
+    await setFocus(ui, false)
+    await setFocus(ui, true)
+    await ui.press({ key: 'key-spawn' })
+    await clock.advance(100)
+    expect(await ui.find({ key: 'composer' })).toBeDefined()
+  })
+
+  test('keeps a form open in the terminal while another surface draws the pane without the keyboard', async ($, on) => {
+    const clock = mock.clock(on)
+    await startSession($, on)
+    const terminal = await mount($, { isFocused: true })
+    await terminal.press({ key: 'key-spawn' })
+
+    await mount($, { surface: 'desktop' })
+    await clock.advance(100)
+    expect(await terminal.find({ key: 'composer' })).toBeDefined()
   })
 
   test('the form closes once the pane gives up the keyboard, as Esc in its field makes it', async ($, on) => {
@@ -150,6 +191,218 @@ describe('keys', () => {
     await $.command.run({ command: 'glimt', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })
 
     expect(askedFocus).toEqual([false, true])
+  })
+})
+
+describe('the cursor row', () => {
+  // A row of each kind the cursor can be on: this session, a step, an agent,
+  // another session, and one of that session's agents. `name` is what is
+  // inverse while the pane holds the keyboard, `line` the row the band runs
+  // across without it.
+  const ROWS = [
+    { toggle: 'toggle-self', name: 'glimt work', line: '▸ glimt work  this session' },
+    { toggle: 'toggle-1', name: 'Write the pane', line: '▸ ☐ Write the pane' },
+    { toggle: 'toggle-agent-a1', name: 'Explore helper', line: '▸ ⠋ Explore helper <1m · 0 tools' },
+    { toggle: 'toggle-session-d3d04fc1-full', name: 'release-notes', line: '▸ ◉ release-notes waiting' },
+    { toggle: 'toggle-remote-1879e383-full-b1', name: 'Explore find loaders', line: '  ├─ ▸ ⠋ Explore find loaders <1m ago' },
+  ]
+
+  // The pane holding the keyboard, with every row in ROWS: docs-site is
+  // opened to show its agents.
+  async function everyRow($: Engine, on: On) {
+    taskTools(on)
+    loops(on)
+    await machine($, on, AGENTS_MACHINE)
+    await create($, 'Write the pane')
+    await spawn($, 'a1', 'helper')
+    const ui = await mount($, { isFocused: true })
+    await ui.press({ key: 'toggle-session-1879e383-full' })
+
+    return ui
+  }
+
+  // Each element the pane marks: a text drawn inverse, or one on a band of
+  // background color, a row's or a text's.
+  const marks = async (ui: Mounted) =>
+    [...(await ui.findAll({ type: 'Text' })), ...(await ui.findAll({ type: 'Box' }))]
+      .filter(one => one.props.inverse === true || one.props.backgroundColor !== undefined)
+      .map(one => ({ type: one.type, text: one.text, inverse: one.props.inverse === true, band: one.props.backgroundColor }))
+
+  const inverse = (text: string) => [{ type: 'Text', text, inverse: true, band: undefined }]
+  const band = (text: string, color: string) => [{ type: 'Box', text, inverse: false, band: color }]
+
+  test('is inverse on the name while the pane holds the keyboard', async ($, on) => {
+    const ui = await everyRow($, on)
+
+    for (const row of ROWS) {
+      await moveTo($, row.toggle)
+      expect(await marks(ui)).toEqual(inverse(row.name))
+    }
+  })
+
+  test("keeps a quiet band across the row, the theme's background for your messages, once Esc gives the keyboard back to the prompt", async ($, on) => {
+    const ui = await everyRow($, on)
+
+    for (const row of ROWS) {
+      await setFocus(ui, true)
+      await moveTo($, row.toggle)
+      await setFocus(ui, false)
+      expect(await marks(ui)).toEqual(band(row.line, 'userMessageBackground'))
+    }
+  })
+
+  test('draws the band in the Cursor band color option', { options: { bandColor: '#3b4261' } }, async ($, on) => {
+    const ui = await everyRow($, on)
+
+    for (const row of ROWS) {
+      await setFocus(ui, true)
+      await moveTo($, row.toggle)
+      await setFocus(ui, false)
+      expect(await marks(ui)).toEqual(band(row.line, '#3b4261'))
+    }
+  })
+
+  test(
+    "draws the band in the theme's background for your messages for a Cursor band color glimt can't read",
+    { options: { bandColor: 'teal' } },
+    async ($, on) => {
+      const ui = await everyRow($, on)
+
+      await moveTo($, 'toggle-1')
+      await setFocus(ui, false)
+      expect(await marks(ui)).toEqual(band('▸ ☐ Write the pane', 'userMessageBackground'))
+    },
+  )
+
+  test('is inverse again when the pane gets the keyboard back', async ($, on) => {
+    const ui = await everyRow($, on)
+
+    for (const row of ROWS) {
+      await moveTo($, row.toggle)
+      await setFocus(ui, false)
+      await setFocus(ui, true)
+      expect(await marks(ui)).toEqual(inverse(row.name))
+    }
+  })
+
+  test("keeps the band while a form's field holds the keyboard: a new agent's task, or a new name", async ($, on) => {
+    const ui = await everyRow($, on)
+    await moveTo($, 'toggle-self')
+
+    await ui.press({ key: 'key-spawn' })
+    expect(await marks(ui)).toEqual(band('▸ glimt work  this session', 'userMessageBackground'))
+    await ui.press({ key: 'composer-cancel' })
+    await ui.press({ key: 'key-rename' })
+    expect(await marks(ui)).toEqual(band('▸ glimt work  this session', 'userMessageBackground'))
+  })
+
+  // A bug found in review: with Tab or a click on the form's field before
+  // Enter, the row kept the band after the form closed.
+  test('is inverse again once the form closes on Enter, also after Tab put the ring on its field', async ($, on) => {
+    const ui = await everyRow($, on)
+    await moveTo($, 'toggle-self')
+
+    await ui.press({ key: 'key-rename' })
+    await moveTo($, 'composer-field')
+    await ui.input({ key: 'composer-field', text: 'docs work' })
+    expect(await ui.find({ key: 'composer' })).toBeUndefined()
+    expect(await marks(ui)).toEqual(inverse('glimt work'))
+  })
+
+  test('forgets the cursor when the pane closes, by its close mark or by q: opened again, no row is marked', { plugins: [CLOSER] }, async ($, on) => {
+    on('ui.close', () => ({ value: undefined }))
+    const ui = await everyRow($, on)
+    await moveTo($, 'toggle-1')
+
+    await $.command.run({ command: 'close-glimt', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })
+    await ui.unmount()
+    const reopened = await mount($)
+    expect(await marks(reopened)).toEqual([])
+    await reopened.unmount()
+
+    const again = await mount($, { isFocused: true })
+    await moveTo($, 'toggle-1')
+    await again.press({ key: 'key-help' })
+    await again.press({ key: 'help-close' })
+    await again.unmount()
+    expect(await marks(await mount($))).toEqual([])
+  })
+
+  test('keeps everything as it was when a hook refuses the close from its close mark', { plugins: [CLOSER] }, async ($, on) => {
+    on('ui.close', () => ({ deny: 'kept open' }))
+    const ui = await everyRow($, on)
+    await moveTo($, 'toggle-1')
+
+    await $.command
+      .run({ command: 'close-glimt', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })
+      .catch(() => undefined)
+    await setFocus(ui, false)
+    expect(await marks(ui)).toEqual(band('▸ ☐ Write the pane', 'userMessageBackground'))
+  })
+
+  test('forgets the key list, and a clear or a stop waiting for y or n, when the pane closes', { plugins: [CLOSER] }, async ($, on) => {
+    on('ui.close', () => ({ value: undefined }))
+    const first = await everyRow($, on)
+    const reopen = async (pane: Mounted) => {
+      await $.command.run({ command: 'close-glimt', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })
+      await pane.unmount()
+      return mount($, { isFocused: true })
+    }
+
+    await first.press({ key: 'key-help' })
+    const second = await reopen(first)
+    expect(await second.find({ key: 'help' })).toBeUndefined()
+
+    await moveTo($, 'toggle-self')
+    await second.press({ key: 'key-clear' })
+    expect(await second.find({ key: 'clear-ask' })).toBeDefined()
+    const third = await reopen(second)
+    expect(await third.find({ key: 'clear-ask' })).toBeUndefined()
+
+    await moveTo($, 'toggle-session-d3d04fc1-full')
+    await third.press({ key: 'key-stop' })
+    expect(await third.find({ key: 'stop-d3d04fc1-full' })).toBeDefined()
+    const fourth = await reopen(third)
+    expect(await fourth.find({ key: 'stop-d3d04fc1-full' })).toBeUndefined()
+  })
+
+  test('keeps everything as it was, the key list too, when a hook refuses the close q asks for', async ($, on) => {
+    on('ui.close', () => ({ deny: 'kept open' }))
+    const ui = await everyRow($, on)
+    await moveTo($, 'toggle-1')
+
+    await ui.press({ key: 'key-help' })
+    await ui.press({ key: 'help-close' })
+    expect(await ui.find({ key: 'help' })).toBeDefined()
+    await ui.press({ key: 'key-help' })
+    await setFocus(ui, false)
+    expect(await marks(ui)).toEqual(band('▸ ☐ Write the pane', 'userMessageBackground'))
+  })
+
+  test('opens on the overview again after it closed inside a session', { plugins: [CLOSER] }, async ($, on) => {
+    on('ui.close', () => ({ value: undefined }))
+    const ui = await everyRow($, on)
+    await moveTo($, 'toggle-session-1879e383-full')
+    await ui.press({ key: 'key-into' })
+    expect(await ui.find({ key: 'drill' })).toBeDefined()
+
+    await $.command.run({ command: 'close-glimt', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })
+    await ui.unmount()
+    const reopened = await mount($, { isFocused: true })
+    expect(await reopened.find({ key: 'drill' })).toBeUndefined()
+    expect(await textOf(reopened, 'sessions-heading')).toBe('Sessions  1 waiting · 1 working')
+  })
+
+  test('closes a form left open when the pane closes: opened again, it does not come back', { plugins: [CLOSER] }, async ($, on) => {
+    on('ui.close', () => ({ value: undefined }))
+    const ui = await everyRow($, on)
+    await ui.press({ key: 'key-spawn' })
+    expect(await ui.find({ key: 'composer' })).toBeDefined()
+
+    await $.command.run({ command: 'close-glimt', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })
+    await ui.unmount()
+    const reopened = await mount($, { isFocused: true })
+    expect(await reopened.find({ key: 'composer' })).toBeUndefined()
   })
 })
 

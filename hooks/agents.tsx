@@ -3,7 +3,7 @@
 import type { AgentInfo, ModelUsage } from 'claude-code'
 import type { Agent, AgentState, Focus, RunningCall } from '../types'
 import { cells, clip, duration, fit, fitStart, minutes, spin, tokenNumber, toolName, wrap } from './text'
-import { heading } from './view'
+import { cursorStyle, heading } from './view'
 import type { View } from './view'
 
 // Finished agents stay on show below the running ones until a new request,
@@ -356,10 +356,11 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
           const tally = tallyOf(view, node)
           const title = fit(`${a.type} ${a.description}`, view.columns - leadOf(node) - (isNarrow ? 0 : cells(tally) + 1))
           const type = title.startsWith(a.type) ? a.type : title
+          const cursor = cursorStyle(view, `toggle-agent-${a.id}`)
 
           return (
             <Box key={`agent-${a.id}`} flexDirection="column">
-              <Box flexDirection="row">
+              <Box flexDirection="row" {...cursor.row}>
                 {branch !== '' && <Text color={quiet}>{branch}</Text>}
                 {!isMain && (
                   <Button key={`toggle-agent-${a.id}`} plain label={task.length > 0 ? '▾' : '▸'} onPress={() => view.toggle(`agent:${a.id}`)} />
@@ -368,7 +369,7 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
                 <Box flexGrow={1}>
                   <Text {...(isRunning ? {} : { color: quiet })}>
                     <Text color={color}>{mark}</Text>{' '}
-                    <Text inverse={view.cursor === `toggle-agent-${a.id}`}>
+                    <Text {...cursor.name}>
                       <Text bold>{type}</Text>
                       {title.slice(type.length)}
                     </Text>

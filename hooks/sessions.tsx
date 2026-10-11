@@ -6,7 +6,7 @@ import { TASK_LINES } from './agents'
 import { runtime } from './state'
 import { cells, clip, fit, fitParts, fitStart, isRecord, minutes, partsText, spin, tildePath, toolName, wrap } from './text'
 import type { Part } from './text'
-import { heading, partsNode } from './view'
+import { cursorStyle, heading, partsNode } from './view'
 import type { View } from './view'
 
 // Shared agents are written again this often unchanged, so a reader can tell
@@ -250,10 +250,11 @@ export function sessionSection(view: View, listing: Listing, room: number) {
             view.columns - 4 - MIN_NAME - 1,
           )
           const tally = partsText(parts)
+          const cursor = cursorStyle(view, `toggle-session-${s.sessionId}`)
 
           return (
             <Box key={`session-${s.sessionId}`} flexDirection="column">
-              <Box flexDirection="row">
+              <Box flexDirection="row" {...cursor.row}>
                 <Button
                   key={`toggle-session-${s.sessionId}`}
                   plain
@@ -264,7 +265,7 @@ export function sessionSection(view: View, listing: Listing, room: number) {
                   <Text {...(word === 'idle' && !isUnseen ? { color: quiet } : {})}>
                     {' '}
                     <Text color={color}>{mark}</Text>{' '}
-                    <Text bold={isUnseen} inverse={view.cursor === `toggle-session-${s.sessionId}`}>
+                    <Text bold={isUnseen} {...cursor.name}>
                       {fit(s.name, view.columns - 4 - cells(tally) - 1)}
                     </Text>
                   </Text>
@@ -354,11 +355,13 @@ export function remoteSection(view: View, s: Session, state: RemoteState) {
         : text === ''
           ? ['No task text.']
           : clip(wrap(text, view.columns - 7), TASK_LINES)
+    const key = `toggle-remote-${sid}-${a.id}`
     return {
       a,
       target,
       task,
-      key: `toggle-remote-${sid}-${a.id}`,
+      key,
+      cursor: cursorStyle(view, key),
       isActive: isRemoteActive(view, a, share),
       mark: remoteMark(view, a, share),
       tally: remoteTally(view, a, share),
@@ -373,16 +376,14 @@ export function remoteSection(view: View, s: Session, state: RemoteState) {
       <Box key={`remote-${sid}`} flexDirection="column">
         {lines.map(line => (
           <Box key={`remote-${sid}-${line.a.id}`} flexDirection="column">
-            <Box flexDirection="row">
+            <Box flexDirection="row" {...line.cursor.row}>
               <Text color={quiet}>{line.branch}</Text>
               <Button key={line.key} plain label={line.task.length > 0 ? '▾' : '▸'} onPress={() => view.toggle(line.target)} />
               <Box flexGrow={1}>
                 <Text {...(line.isActive ? {} : { color: quiet })}>
                   {' '}
                   <Text color={line.mark.color}>{line.mark.mark}</Text>{' '}
-                  <Text inverse={view.cursor === line.key}>
-                    {fit(`${line.a.type} ${line.a.description}`, view.columns - 9 - cells(line.tally) - 1)}
-                  </Text>
+                  <Text {...line.cursor.name}>{fit(`${line.a.type} ${line.a.description}`, view.columns - 9 - cells(line.tally) - 1)}</Text>
                 </Text>
               </Box>
               <Text color={quiet}> {line.tally}</Text>

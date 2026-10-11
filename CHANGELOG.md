@@ -4,6 +4,22 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-11
+
+### Added
+
+- A Cursor band color option for the band that marks the row you left while the keyboard is at the prompt or in one of glimt's forms. It takes a theme role or a color, and is `userMessageBackground` by default.
+
+### Changed
+
+- While the keyboard is at the prompt after Esc or in one of glimt's forms (a new agent, a new session or a new name), the row you left is marked by a quiet band across the pane, by default the theme's `userMessageBackground`, the background behind your messages, instead of its name staying inverse, as in a Neovim side panel. The inverse comes back with the keyboard. This goes for every row the cursor can be on: this session, steps, agents, other sessions and their agents.
+- Closing the pane forgets the row the cursor was on and the agent or session it was in, so it opens again on the overview with no row marked.
+
+### Fixed
+
+- After `q` in the key list closed the pane, the chat went on leaving out the task-list rows and keeping a running agent's row to one line, until the pane was opened again.
+- A form, the key list, or a clear or a stop waiting for y or n, left open when the pane closed, came back when the pane opened again. They now close with the pane.
+
 ## [0.6.1] - 2026-10-11
 
 ### Fixed
@@ -106,7 +122,8 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 - New agents here (`n`) or as a background session (`s`), rename (`r`), clear (`c`), attach (`a`) and stop (`x`).
 - The key list (`i`), a spinner on whatever is working with still marks for the rest, and a layout that keeps the sessions in place while agents come and go.
 
-[Unreleased]: https://github.com/mmedum/glimt/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/mmedum/glimt/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/mmedum/glimt/releases/tag/v0.6.2
 [0.6.1]: https://github.com/mmedum/glimt/releases/tag/v0.6.1
 [0.6.0]: https://github.com/mmedum/glimt/releases/tag/v0.6.0
 [0.5.0]: https://github.com/mmedum/glimt/releases/tag/v0.5.0
