@@ -192,6 +192,59 @@ describe('keys', () => {
 
     expect(askedFocus).toEqual([false, true])
   })
+
+  // Claude Code's record of glimt's pane, as $.ui.panes lists it.
+  const glimtPane = (isShown: boolean) => [{ id: 'glimt', title: 'glimt', isShown, isFocused: false, isPlaced: true }]
+
+  test('/glimt closes the pane when it is the one shown', async ($, on) => {
+    mock.clock(on)
+    const closed: unknown[] = []
+    on('ui.close', (_$, e) => {
+      closed.push(e.id)
+      return { value: undefined }
+    })
+    on('ui.panes', () => ({ value: glimtPane(true) }))
+    const askedFocus: boolean[] = []
+    await startSession($, on, { askedFocus })
+    await $.command.run({ command: 'glimt', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })
+
+    expect(closed).toEqual(['glimt'])
+    expect(askedFocus).toEqual([false])
+  })
+
+  test('/glimt brings the pane to the front with the keyboard when another pane is shown over it', async ($, on) => {
+    mock.clock(on)
+    const closed: unknown[] = []
+    on('ui.close', (_$, e) => {
+      closed.push(e.id)
+      return { value: undefined }
+    })
+    on('ui.panes', () => ({ value: glimtPane(false) }))
+    const askedFocus: boolean[] = []
+    await startSession($, on, { askedFocus })
+    await $.command.run({ command: 'glimt', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })
+
+    expect(closed).toEqual([])
+    expect(askedFocus).toEqual([false, true])
+  })
+
+  test('a pane the person closed stays closed after /clear, until /glimt opens it', async ($, on) => {
+    mock.clock(on)
+    on('ui.close', () => ({ value: undefined }))
+    on('classic.SessionStart', () => ({}))
+    const askedFocus: boolean[] = []
+    await startSession($, on, { askedFocus })
+    const ui = await mount($, { isFocused: true })
+
+    await ui.press({ key: 'key-help' })
+    await ui.press({ key: 'help-close' })
+    await $.classic.SessionStart({ source: 'clear' })
+    expect(askedFocus).toEqual([false])
+
+    await $.command.run({ command: 'glimt', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })
+    await $.classic.SessionStart({ source: 'clear' })
+    expect(askedFocus).toEqual([false, true, false])
+  })
 })
 
 describe('the cursor row', () => {

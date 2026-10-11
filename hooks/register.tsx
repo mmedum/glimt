@@ -165,8 +165,15 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  // /glimt closes the pane when it is the one shown, else opens it with the
+  // keyboard, as Neovim's side panels toggle.
   on('command.run', { command: 'glimt' }, async $ => {
-    await openPane($, true)
+    const pane = (await $.ui.panes().catch(() => [])).find(one => one.id === PANE)
+    if (pane?.isShown === true && pane.isPlaced) {
+      await closePane($)
+    } else {
+      await openPane($, true)
+    }
 
     return {}
   })
@@ -654,13 +661,7 @@ export const register: Register = (on, options) => {
           {helpSection(view, {
             spawn: () => void leave(() => openComposer($, { kind: 'spawn', where: 'here' })),
             session: () => void leave(() => openComposer($, { kind: 'spawn', where: 'session' })),
-            // glimt's own close passes no ui.close hook of its own; refused,
-            // the pane stays as it was, the key list too.
-            close: () =>
-              void $.ui.close({ id: PANE }).then(
-                () => forgetPane($),
-                () => undefined,
-              ),
+            close: () => void closePane($),
             back: () => void update($, help, () => false),
           })}
         </Box>
@@ -830,18 +831,37 @@ export const register: Register = (on, options) => {
 
 // Opened unasked, at session start, the pane waits for a wide terminal and
 // leaves the keyboard alone; opened by /glimt it takes the keyboard.
+// Opening it unasked (at start, after /clear) leaves a pane the person
+// closed closed; asked, it opens and stays open from then on.
 async function openPane($: EngineInterface, isAsked = false) {
+  if (!isAsked && runtime.isClosed) {
+    return
+  }
+
+  runtime.isClosed = false
   const pane = { id: PANE, title: 'glimt' }
   const shown = await $.ui.open(isAsked ? { ...pane, focus: true as const } : pane)
   await update($, isShown, () => shown.isPlaced)
 }
 
-// The pane closed, by its close mark, ctrl+x x or q: the chat shows all of
-// itself again, and the pane forgets its cursor, the agent or session it was
-// in, a form left open, the key list, and a clear or a stop waiting for y or
-// n. Opened again, it starts on the overview, as Claude Code's focus ring
-// starts afresh, and a band left on a row from before would mark nothing.
+// q and /glimt close the pane with glimt's own close, which passes no
+// ui.close hook of glimt's; refused, the pane stays as it was, the key list
+// too.
+async function closePane($: EngineInterface) {
+  await $.ui.close({ id: PANE }).then(
+    () => forgetPane($),
+    () => undefined,
+  )
+}
+
+// The pane closed, by its close mark, ctrl+x x, q or /glimt: it stays closed
+// until the person opens it again, the chat shows all of itself again, and
+// the pane forgets its cursor, the agent or session it was in, a form left
+// open, the key list, and a clear or a stop waiting for y or n. Opened again,
+// it starts on the overview, as Claude Code's focus ring starts afresh, and
+// a band left on a row from before would mark nothing.
 async function forgetPane($: EngineInterface) {
+  runtime.isClosed = true
   runtime.isFocused = false
   runtime.hasLostKeyboard = false
   await update($, isShown, () => false)

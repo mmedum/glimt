@@ -12,8 +12,9 @@ export type Toggle = { key: string; target: string }
 // folder and Claude Code's own folder,
 // whether anything runs (so the clock knows to move) and how many frames
 // have passed, what this session last shared, and when, how many calls it
-// has seen start (each running call's id), and whether its notifications are
-// on (the `notifications` option).
+// has seen start (each running call's id), whether its notifications are on
+// (the `notifications` option), and whether the person closed the pane,
+// which then stays closed, /clear included, until they open it again.
 export const runtime = {
   toggles: [] as Toggle[],
   isFocused: false,
@@ -26,4 +27,5 @@ export const runtime = {
   lastSharedAt: 0,
   calls: 0,
   notifies: true,
+  isClosed: false,
 }

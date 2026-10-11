@@ -23,7 +23,7 @@ Its icon says what it does: a calm board of everything at a glance; one lamp lig
 
 Needs Claude Code 2.1.289 or later in a terminal (2.1.295 for desktop notifications); tested with 2.1.295. Mods don't draw in the VS Code panel or with `-p`.
 
-The pane opens by itself when the terminal is at least 144 columns wide. `/glimt` opens it at any width, with the keyboard.
+The pane opens by itself when the terminal is at least 144 columns wide. `/glimt` opens it at any width, with the keyboard, and closes it again. A pane you close stays closed, also after `/clear`, until you open it.
 
 Third-party marketplaces don't update on their own. To update, run `claude plugin update glimt@glimt` and restart Claude Code. To remove glimt, run `claude plugin uninstall glimt@glimt`.
 
@@ -99,7 +99,7 @@ Mods run with your permissions, so here is everything glimt touches. `claude plu
 
 - The system prompt: while Claude has the task tools, one sentence asking it to file sub-steps under their step (`metadata.parent`).
 - The chat, while the pane is open: task-list rows are left out, and a running agent's row is kept to one line.
-- `/glimt`, its own command, opens the pane.
+- `/glimt`, its own command, opens and closes the pane.
 
 Its hook on Claude Code's permission request only notes which agent is being asked and about which call (the tool, and the command, path or address it is on), and hands the request on unchanged: glimt never answers a permission. Its other hooks (tool calls, turns, agents, prompts, the hook events that carry the permission mode, usage measurements, session start and end, focus) only read what passes, to keep the pane current, and pass it on unchanged.
 

@@ -4,6 +4,13 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-11
+
+### Changed
+
+- `/glimt` closes the pane when it is the one shown, and otherwise opens it with the keyboard, as Neovim's side panels toggle.
+- A pane you close, with `/glimt`, `q`, its close mark or ctrl+x x, stays closed after `/clear` until you open it again. Before, it opened again by itself in a wide terminal.
+
 ## [0.7.0] - 2026-10-11
 
 ### Changed
@@ -136,7 +143,8 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 - New agents here (`n`) or as a background session (`s`), rename (`r`), clear (`c`), attach (`a`) and stop (`x`).
 - The key list (`i`), a spinner on whatever is working with still marks for the rest, and a layout that keeps the sessions in place while agents come and go.
 
-[Unreleased]: https://github.com/mmedum/glimt/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/mmedum/glimt/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/mmedum/glimt/releases/tag/v0.8.0
 [0.7.0]: https://github.com/mmedum/glimt/releases/tag/v0.7.0
 [0.6.3]: https://github.com/mmedum/glimt/releases/tag/v0.6.3
 [0.6.2]: https://github.com/mmedum/glimt/releases/tag/v0.6.2
