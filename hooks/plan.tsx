@@ -187,13 +187,18 @@ export function planTitle(text: string): string {
   return title.replace(/^#+\s*/, '')
 }
 
+// Claude Code's checklist marks: ☒ done, ☐ to do; ◐ for the step in progress.
+// A step to do carries no status, so its mark takes the mark color.
+const STEP_MARK: Record<StepStatus, string> = { completed: '☒', in_progress: '◐', pending: '☐' }
+const STATUS_COLOR: Record<Exclude<StepStatus, 'pending'>, string> = { completed: 'success', in_progress: 'claude' }
+
 // The steps in progress, and how long the first has been: a step left in
 // progress while nothing runs shows its age here.
 export function nowSection(view: View, list: Step[]) {
   const { Box, Text } = view.ui
   const active = list.filter(step => step.status === 'in_progress')
   const since = active[0]?.startedAt
-  const mark = view.isTurnRunning ? spin(view.at) : '◐'
+  const mark = view.isTurnRunning ? spin(view.at) : STEP_MARK.in_progress
 
   return {
     rows: 1 + Math.max(1, active.length),
@@ -212,16 +217,8 @@ export function nowSection(view: View, list: Step[]) {
   }
 }
 
-// Claude Code's checklist marks: ☒ done, ☐ to do; ◐ for the step in progress.
-// A step to do carries no status, so its mark takes the mark color.
 export function stepMark(view: View, status: StepStatus): { mark: string; color: string } {
-  const marks: Record<StepStatus, { mark: string; color: string }> = {
-    completed: { mark: '☒', color: 'success' },
-    in_progress: { mark: '◐', color: 'claude' },
-    pending: { mark: '☐', color: view.colors.mark },
-  }
-
-  return marks[status]
+  return { mark: STEP_MARK[status], color: status === 'pending' ? view.colors.mark : STATUS_COLOR[status] }
 }
 
 // Empty, the plan says why where it knows: Claude has no task list here,
@@ -245,7 +242,7 @@ export function planSection(view: View, approved: Plan | null, list: Step[], lin
             <Box key="folded">
               <Text color={quiet}>
                 {'  '}
-                <Text color="success">☒</Text> {line.count} done
+                <Text color={STATUS_COLOR.completed}>{STEP_MARK.completed}</Text> {line.count} done
               </Text>
             </Box>
           )
@@ -255,7 +252,7 @@ export function planSection(view: View, approved: Plan | null, list: Step[], lin
             <Box key="more">
               <Text color={quiet}>
                 {'  '}
-                <Text color={view.colors.mark}>☐</Text> {line.count} more
+                <Text color={view.colors.mark}>{STEP_MARK.pending}</Text> {line.count} more
               </Text>
             </Box>
           )

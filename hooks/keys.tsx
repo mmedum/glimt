@@ -191,8 +191,9 @@ export const FORM_ROWS = 3
 // task for a new agent here (n) or in a new background session (s), or a new
 // name for a session (r). Its label says which, so nothing is left to choose.
 // Its field holds the keyboard: Enter starts, Enter on an empty field or
-// leaving it (Tab, or a click on cancel) closes it. The Enter hint is drawn
-// as its cancel key is, dim, so the two read as one row of keys.
+// leaving it (Tab, or a click on cancel) closes it. The Enter hint is quiet
+// text: by default as dim as its cancel key, so the two read as one row of
+// keys.
 export function composerSection(view: View, form: Composer, list: Session[], act: ComposerActions) {
   const { Box, Button, Text } = view.ui
   const { Input } = view
@@ -215,7 +216,7 @@ export function composerSection(view: View, form: Composer, list: Session[], act
         onSubmit={text => (isSpawn ? act.spawn(text, form.where) : act.rename(form.sessionId, text))}
       />
       <Box flexDirection="row" columnGap={3}>
-        <Text dimColor>{`↵ ${verb}`}</Text>
+        <Text color={view.colors.quiet}>{`↵ ${verb}`}</Text>
         <Button key="composer-cancel" plain dimColor label="tab cancel" onPress={act.cancel} />
       </Box>
     </Box>

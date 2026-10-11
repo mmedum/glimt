@@ -8,11 +8,12 @@ export type Ui = Pick<ElementTable, 'Box' | 'Text' | 'Button'>
 export type InputElement = ElementTable<'terminal' | 'desktop'>['Input']
 
 // The color options, each a theme role or a color (see paint.ts): the quiet
-// text, the marks that carry no status (a step to do, an idle session or
-// agent) and the headings; the status marks keep the theme's colors. Quiet
-// text goes without dimColor, which would win over its color. A Button
-// takes no color, so the keys stay dimColor: the theme's inactive.
-export type Colors = { quiet: string; mark: string; heading: string }
+// text, the marks that carry no status (a step to do, another session idle
+// or done, or one of its agents gone quiet) and the headings, without one
+// bold in the terminal's own text color; the status marks keep the theme's
+// colors. Quiet text goes without dimColor, which would win over its color.
+// A Button takes no color, so the keys stay dimColor: the theme's inactive.
+export type Colors = { quiet: string; mark: string; heading: string | undefined }
 
 // What drawing needs beside the state: the elements (an Input where the
 // surface has one), the width, the time, the toggle the cursor is on, what
@@ -28,15 +29,16 @@ export type View = {
   colors: Colors
 }
 
-// A section's heading: its label, bold, and what the section counts right
-// beside it, quiet. Nearness ties the count to its label; the blank row
-// above each section sets the sections apart.
+// A section's heading: its label, bold, in the Heading color where one is
+// set, and what the section counts right beside it, quiet. Nearness ties the
+// count to its label; the blank row above each section sets the sections
+// apart.
 export function heading({ ui: { Box, Text }, columns, colors }: View, key: string, label: string, count: string) {
   const shown = fit(label, count === '' ? columns : Math.max(1, columns - cells(count) - 2))
 
   return (
     <Box key={key} flexDirection="row">
-      <Text bold color={colors.heading}>
+      <Text bold {...(colors.heading === undefined ? {} : { color: colors.heading })}>
         {shown}
       </Text>
       {count !== '' && <Text color={colors.quiet}>{fit(`  ${count}`, columns - cells(shown))}</Text>}

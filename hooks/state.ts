@@ -11,9 +11,8 @@ export type Toggle = { key: string; target: string }
 // drawn, the home folder and Claude Code's own folder,
 // whether anything runs (so the clock knows to move) and how many frames
 // have passed, what this session last shared, and when, how many calls it
-// has seen start (each running call's id), whether its notifications are
-// on (the `notifications` option), and the colors it draws in (the color
-// options).
+// has seen start (each running call's id), and whether its notifications are
+// on (the `notifications` option).
 export const runtime = {
   toggles: [] as Toggle[],
   isFocused: false,
@@ -25,5 +24,4 @@ export const runtime = {
   lastSharedAt: 0,
   calls: 0,
   notifies: true,
-  colors: { quiet: 'inactive', mark: 'inactive', heading: 'text' },
 }

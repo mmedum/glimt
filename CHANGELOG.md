@@ -4,6 +4,19 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-11
+
+### Fixed
+
+- Section headings are again bold in the terminal's own text color, as before 0.6.0, unless the Heading color option is set. In 0.6.0 they took the theme's `text` color by default, which can differ from it. The option's description now names every heading it colors.
+- A background session that ended counted as idle, so one that had gone idle first ended without turning bold, its time still counting from when it went idle. Ending now starts a phase of its own: the name turns bold until you open it, and the time counts from the end.
+- A session that failed or stopped sorts right after the working ones, so when the list runs short of room, `+N more` hides done and idle sessions before it.
+- Short of room, a background session that ended, done, failed or stopped, was folded into the `○ N idle` line. It now keeps its row, which says how it ended.
+- The form's `↵ start` and `↵ rename` hint takes the Quiet text color, as glimt's other quiet text does; only the keys, which are buttons, stay `inactive`.
+- A short hex color, such as `#f80`, now goes to Claude Code as `#ff8800`, as an `rgb()` color does, so it no longer depends on how Claude Code reads short hex.
+- The Mark color option's description, and the README, now say what it colors: the `☐` of a step to do and the `○` of another session that is idle or done, or of one of its agents gone quiet, also on the lines that fold them.
+- Only color names, `ansi:` names and `ansi256()` from 0 to 15 follow the terminal's own palette. The README, and the notes for 0.6.0, said every `ansi256()` color did.
+
 ## [0.6.0] - 2026-10-11
 
 ### Added
@@ -93,7 +106,8 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 - New agents here (`n`) or as a background session (`s`), rename (`r`), clear (`c`), attach (`a`) and stop (`x`).
 - The key list (`i`), a spinner on whatever is working with still marks for the rest, and a layout that keeps the sessions in place while agents come and go.
 
-[Unreleased]: https://github.com/mmedum/glimt/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/mmedum/glimt/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/mmedum/glimt/releases/tag/v0.6.1
 [0.6.0]: https://github.com/mmedum/glimt/releases/tag/v0.6.0
 [0.5.0]: https://github.com/mmedum/glimt/releases/tag/v0.5.0
 [0.4.0]: https://github.com/mmedum/glimt/releases/tag/v0.4.0

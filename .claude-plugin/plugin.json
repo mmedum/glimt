@@ -1,6 +1,6 @@
 {
   "name": "glimt",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "A quiet side pane: what this session is doing now, its plan, its agents as a tree, and every other Claude Code session with theirs",
   "author": {
     "name": "Mark Medum Bundgaard",
@@ -29,14 +29,13 @@
     "markColor": {
       "type": "string",
       "title": "Mark color",
-      "description": "The ☐ of a step to do and the ○ of an idle session or agent; the other marks keep their status colors. A theme role such as inactive (the default) or claude; or a color: #7aa2f7, rgb(122,162,247), ansi256(110) or ansi:cyan",
+      "description": "The ☐ of a step to do and the ○ of another session that is idle or done, or of one of its agents gone quiet, also on the lines that fold them (☐ 3 more, ○ 2 idle); the other marks keep their status colors. A theme role such as inactive (the default) or claude; or a color: #7aa2f7, rgb(122,162,247), ansi256(110) or ansi:cyan",
       "default": "inactive"
     },
     "headingColor": {
       "type": "string",
       "title": "Heading color",
-      "description": "The section headings: Now, Plan, Agents, Sessions. A theme role such as text (the default, Claude Code's color for text) or claude; or a color: #7aa2f7, rgb(122,162,247), ansi256(110) or ansi:cyan",
-      "default": "text"
+      "description": "The section headings: Now, Plan, Agents and Sessions, and Task and Activity inside an agent or a session. By default bold in the terminal's own text color. A theme role such as claude or success; or a color: #7aa2f7, rgb(122,162,247), ansi256(110) or ansi:cyan"
     }
   },
   "keywords": ["claude-code", "mod", "pane", "agents", "subagents", "sessions", "tui"],

@@ -108,6 +108,27 @@ describe('sessions', () => {
     expect(await isBold()).toBe(false)
   })
 
+  test('a background session that ends starts a phase of its own: bold until opened, its time counted from the end', LONG_CLOCK, async ($, on) => {
+    const relisted = { current: undefined as unknown }
+    const notes = (state: string, status: string) => LISTED.map(s => (s.sessionId === 'd3d04fc1-full' ? { ...s, state, status } : s))
+    const { clock } = await machine($, on, { listed: notes('working', 'busy'), relisted })
+    const ui = await mount($)
+    const isBold = async () => (await ui.findAll({ type: 'Text' })).find(text => text.text === 'release-notes')?.props.bold === true
+
+    // It goes idle and is opened; two minutes on, it is done.
+    relisted.current = notes('idle', 'idle')
+    await clock.advance(5_000)
+    await ui.press({ key: 'toggle-session-d3d04fc1-full' })
+    await ui.press({ key: 'toggle-session-d3d04fc1-full' })
+    expect(await isBold()).toBe(false)
+    await clock.advance(120_000)
+    relisted.current = notes('done', 'idle')
+    await clock.advance(5_000)
+
+    expect(await textOf(ui, 'session-d3d04fc1-full')).toBe('▸ ○ release-notes done · <1m')
+    expect(await isBold()).toBe(true)
+  })
+
   test('before anything has happened, says in one line what will show', async ($, on) => {
     await machine($, on, { listed: [LISTED[2]] })
     const ui = await mount($)
@@ -132,6 +153,69 @@ describe('sessions', () => {
 
     // 16 rows give the sessions 4: the heading and three lines, for four sessions.
     const ui = await mount($, { rows: 16 })
+    expect(await sessionOrder(ui)).toEqual(['session-d3d04fc1-full', 'session-a15af547-full'])
+    expect(await textOf(ui, 'sessions-idle')).toBe('  ○ 2 idle')
+  })
+
+  // Another session idle in a terminal of its own, and a background session
+  // that ended, done, failed or stopped.
+  const idleSession = (name: string) => ({
+    pid: 1,
+    cwd: `/tmp/${name}`,
+    kind: 'interactive',
+    startedAt: 0,
+    sessionId: `${name}-full`,
+    name,
+    status: 'idle',
+  })
+  const endedSession = (name: string, state: string) => ({
+    id: name,
+    cwd: `/tmp/${name}`,
+    kind: 'background',
+    startedAt: 0,
+    sessionId: `${name}-full`,
+    name,
+    state,
+    status: 'idle',
+  })
+
+  test('folds only the idle sessions: one that ended, done, failed or stopped, keeps its row', async ($, on) => {
+    const ended = [endedSession('built', 'done'), endedSession('broke', 'failed'), endedSession('halted', 'stopped')]
+    await machine($, on, { listed: [...LISTED, idleSession('idler'), ...ended] })
+
+    // 24 rows give the sessions 7: the heading and six lines, for seven sessions.
+    const ui = await mount($, { rows: 24 })
+    expect(await sessionOrder(ui)).toEqual([
+      'session-d3d04fc1-full',
+      'session-a15af547-full',
+      'session-broke-full',
+      'session-halted-full',
+      'session-built-full',
+    ])
+    expect(await textOf(ui, 'session-broke-full')).toBe('▸ ✗ broke failed')
+    expect(await textOf(ui, 'sessions-idle')).toBe('  ○ 2 idle')
+  })
+
+  test('sorts a session that failed or stopped after the working ones, so "+N more" hides done and idle rows first', async ($, on) => {
+    const ended = [endedSession('built', 'done'), endedSession('broke', 'failed'), endedSession('halted', 'stopped'), endedSession('shipped', 'done')]
+    await machine($, on, { listed: [...LISTED, ...ended] })
+
+    // 24 rows give the sessions 7: the heading and six lines, for seven sessions.
+    const ui = await mount($, { rows: 24 })
+    expect(await sessionOrder(ui)).toEqual(['session-d3d04fc1-full', 'session-a15af547-full', 'session-broke-full', 'session-halted-full'])
+    expect(await textOf(ui, 'sessions-idle')).toBe('  ○ 1 idle')
+    expect(await textOf(ui, 'sessions-more')).toBe('+2 more')
+  })
+
+  test('folds an idle session in bold too, one never opened in glimt', async ($, on) => {
+    const relisted = { current: undefined as unknown }
+    const { clock } = await machine($, on, { listed: [...DOCS_BUSY, idleSession('idler')], relisted })
+    // 16 rows give the sessions 4: the heading and three lines, for four sessions.
+    const ui = await mount($, { rows: 16 })
+
+    // docs-site stops: bold until opened.
+    relisted.current = [...LISTED, idleSession('idler')]
+    await clock.advance(5_000)
     expect(await sessionOrder(ui)).toEqual(['session-d3d04fc1-full', 'session-a15af547-full'])
     expect(await textOf(ui, 'sessions-idle')).toBe('  ○ 2 idle')
   })
@@ -474,7 +558,8 @@ describe('notifications', () => {
     expect(await textOf(ui, 'session-d3d04fc1-full')).toBe('▸ ✗ release-notes failed · <1m')
   })
 
-  // Idle at both reads: since when it idles is not known.
+  // Done at the first read, so glimt never saw it end; stopped at the next,
+  // which starts a phase of its own.
   test('leaves alone a session stopped, or already done at the first read, and marks the stopped one', async ($, on) => {
     const sent = notifications(on)
     const relisted = { current: undefined as unknown }
@@ -485,7 +570,7 @@ describe('notifications', () => {
     relisted.current = LISTED.map(s => (s.sessionId === 'd3d04fc1-full' ? { ...s, state: 'stopped' } : s))
     await clock.advance(10_000)
     expect(sent).toEqual([])
-    expect(await textOf(ui, 'session-d3d04fc1-full')).toBe('▸ ■ release-notes stopped')
+    expect(await textOf(ui, 'session-d3d04fc1-full')).toBe('▸ ■ release-notes stopped · <1m')
   })
 
   test("names the session by Claude Code's generated title", async ($, on) => {

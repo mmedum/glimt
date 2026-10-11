@@ -47,7 +47,7 @@ import {
 } from './sessions'
 import { PANE, runtime } from './state'
 import { FRAME_MS, describeCall, firstLine, fit, isRecord, spin, wrap } from './text'
-import type { View } from './view'
+import type { Colors, View } from './view'
 
 // Who counts as asking: the person, typing or through Remote Control or the
 // SDK. A task notification, a peer or a plugin is not a new request.
@@ -119,10 +119,13 @@ const metas = new Map<string, { type: string; description: string }>()
 
 export const register: Register = (on, options) => {
   runtime.notifies = options.notifications !== false
-  runtime.colors = {
+  // The color options, read once here for the pane and the chat alike. A
+  // Heading color unset or unreadable leaves the headings without a color:
+  // bold in the terminal's own text color.
+  const colors: Colors = {
     quiet: colorOf(options.quietColor, 'inactive'),
     mark: colorOf(options.markColor, 'inactive'),
-    heading: colorOf(options.headingColor, 'text'),
+    heading: colorOf(options.headingColor, undefined),
   }
 
   // The command last: a refused registration then leaves the pane and its clock running.
@@ -220,7 +223,7 @@ export const register: Register = (on, options) => {
     const description = typeof input.description === 'string' ? input.description : ''
 
     return (
-      <Text color={runtime.colors.quiet} wrap="truncate-end">
+      <Text color={colors.quiet} wrap="truncate-end">
         {spin(await read($, now))} {type} · {description}
       </Text>
     )
@@ -522,7 +525,7 @@ export const register: Register = (on, options) => {
       isTurnRunning: isTurnRunning(request),
       cursor: await read($, cursor),
       toggle: key => void toggle($, key),
-      colors: runtime.colors,
+      colors,
     }
 
     // This session at the top; the other sessions on the machine, and what

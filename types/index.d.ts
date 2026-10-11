@@ -91,12 +91,13 @@ export type Session = {
   startedAt: number
 }
 
-// What a session is doing, as its mark says it.
-export type SessionState = 'waiting' | 'working' | 'idle'
+// What a session is doing, as its mark says it; a background session that
+// ended says how.
+export type SessionState = 'waiting' | 'working' | 'failed' | 'stopped' | 'done' | 'idle'
 
 // Another session's state as glimt has watched it: since when, undefined
 // while glimt has not seen it begin, and whether it stopped (went idle or
-// waiting) since the person last opened it.
+// waiting, or ended) since the person last opened it.
 export type Phase = { state: SessionState; since?: number | undefined; isUnseen: boolean }
 
 // A running agent of another session, as that session's glimt shares it

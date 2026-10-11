@@ -75,10 +75,11 @@ export function isShared(value: unknown): value is Shared {
   return typeof share.at === 'number' && Array.isArray(share.agents)
 }
 
-// Waiting for its person first, then working, then idle; the list's order
-// within each.
+// Waiting for its person first, then working, then failed or stopped, then
+// done or idle; the list's order within each. Short of room, "+N more" hides
+// rows from the end of this order.
 export function sortSessions(list: Session[]): Session[] {
-  const rank: Record<SessionState, number> = { waiting: 0, working: 1, idle: 2 }
+  const rank: Record<SessionState, number> = { waiting: 0, working: 1, failed: 2, stopped: 2, done: 3, idle: 3 }
 
   return list.toSorted((a, b) => rank[sessionState(a)] - rank[sessionState(b)])
 }
@@ -164,12 +165,13 @@ export function sessionParts(view: View, word: string, phase: Phase | undefined,
 }
 
 // The other Claude Code sessions on the machine in `room` rows, one line
-// each, the ones waiting for their person first, with how long they have
-// been in that state and how many agents their glimt says run; a name in
-// bold stopped since the person last opened it. Opened, a session shows
-// where it runs and its id, then its agents (l goes into the session, or
-// into one of them); after x, it asks whether to stop it. Past the room,
-// the idle ones fold into one line, then the rest are counted.
+// each, in sortSessions' order, with how long they have been in that state
+// and how many agents their glimt says run; a name in bold stopped or ended
+// since the person last opened it. Opened, a session shows where it runs and
+// its id, then its agents (l goes into the session, or into one of them);
+// after x, it asks whether to stop it. Past the room, the idle ones fold
+// into one line, then the last rows are counted. A session that ended is not
+// idle: it keeps its row, which says how it ended.
 export function sessionSection(view: View, listing: Listing, room: number) {
   const { Box, Button, Text } = view.ui
   const { quiet } = view.colors
@@ -444,8 +446,17 @@ export function isSessionBusy(s: Session): boolean {
   return !isSessionWaiting(s) && (s.status === 'busy' || s.state === 'working')
 }
 
+// What a session is doing. A background session that ended is not idle: it
+// says how it ended, and ending starts a phase of its own.
 export function sessionState(s: Session): SessionState {
-  return isSessionWaiting(s) ? 'waiting' : isSessionBusy(s) ? 'working' : 'idle'
+  if (isSessionWaiting(s)) {
+    return 'waiting'
+  }
+  if (isSessionBusy(s)) {
+    return 'working'
+  }
+
+  return s.state === 'failed' || s.state === 'stopped' || s.state === 'done' ? s.state : 'idle'
 }
 
 // What a waiting session wants of its person, by why it waits: a
@@ -459,20 +470,19 @@ const WANTS: Record<string, 'approve' | 'answer'> = { 'permission prompt': 'appr
 // says what it wants, where it says why it waits.
 export function sessionMark(view: View, s: Session): { mark: string; color: string; word: string } {
   const state = sessionState(s)
-  if (state === 'waiting') {
-    return { mark: '◉', color: 'warning', word: WANTS[s.waitingFor ?? ''] ?? 'waiting' }
-  }
-  if (state === 'idle' && s.state === 'failed') {
-    return { mark: '✗', color: 'error', word: 'failed' }
-  }
-  if (state === 'idle' && s.state === 'stopped') {
-    return { mark: '■', color: 'warning', word: 'stopped' }
-  }
-  if (state === 'idle' && s.state === 'done') {
-    return { mark: '○', color: view.colors.mark, word: 'done' }
+  switch (state) {
+    case 'waiting':
+      return { mark: '◉', color: 'warning', word: WANTS[s.waitingFor ?? ''] ?? 'waiting' }
+    case 'working':
+      return { mark: spin(view.at), color: 'claude', word: 'working' }
+    case 'failed':
+      return { mark: '✗', color: 'error', word: 'failed' }
+    case 'stopped':
+      return { mark: '■', color: 'warning', word: 'stopped' }
   }
 
-  return state === 'working' ? { mark: spin(view.at), color: 'claude', word: 'working' } : { mark: '○', color: view.colors.mark, word: 'idle' }
+  // Done or idle.
+  return { mark: '○', color: view.colors.mark, word: state }
 }
 
 // The word, and how long the session has been in its state when glimt saw
@@ -482,8 +492,9 @@ export function stateText(word: string, phase: Phase | undefined, at: number): s
 }
 
 // The sessions' phases after a read at `at`. A session glimt meets for the
-// first time is in a phase of unknown age; one whose state changed starts a
-// phase now, unseen if it stopped; a session no longer listed is dropped.
+// first time is in a phase of unknown age; one whose state changed, ending
+// included, starts a phase now, unseen unless it went to work; a session no
+// longer listed is dropped.
 export function nextPhases(before: Record<string, Phase>, list: Session[], at: number): Record<string, Phase> {
   return Object.fromEntries(
     list.map(s => {

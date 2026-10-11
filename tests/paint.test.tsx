@@ -44,6 +44,17 @@ async function paint(ui: Pick<Mounted, 'findAll'>, texts: readonly string[]): Pr
   )
 }
 
+// For each section heading, the overview's by default, the props of the
+// Texts that show exactly its label, color or none.
+async function headings(
+  ui: Pick<Mounted, 'findAll'>,
+  labels: readonly string[] = ['Now', 'Plan', 'Agents', 'Sessions'],
+): Promise<Record<string, unknown[]>> {
+  const all = await ui.findAll({ type: 'Text' })
+
+  return Object.fromEntries(labels.map(label => [label, all.filter(one => one.text === label).map(one => one.props)]))
+}
+
 describe('colors', () => {
   test("reads a color as Claude Code's custom themes spell one, and falls back on anything else", () => {
     const cases: [unknown, string][] = [
@@ -56,7 +67,7 @@ describe('colors', () => {
       ['cyan', 'ansi256(6)'],
       ['redBright', 'ansi256(9)'],
       ['gray', 'ansi256(8)'],
-      [' #F80 ', '#f80'],
+      [' #F80 ', '#ff8800'],
       ['#7AA2F7', '#7aa2f7'],
       ['rgb(122, 162, 247)', '#7aa2f7'],
       ['rgb(255, 255, 255)', '#ffffff'],
@@ -80,7 +91,7 @@ describe('colors', () => {
     }
   })
 
-  test("by default draws quiet text and the marks of a step to do or an idle session in Claude Code's color for hints, and the headings in its text color", async ($, on) => {
+  test("by default draws quiet text and the marks of a step to do or an idle session in Claude Code's color for hints", async ($, on) => {
     const ui = await scene($, on)
 
     const want = {
@@ -88,10 +99,48 @@ describe('colors', () => {
       ' 0s · 0 tools': ['inactive'],
       '☐': ['inactive'],
       '○': ['inactive', 'inactive'],
-      Plan: ['text'],
-      Sessions: ['text'],
     }
     expect(await paint(ui, Object.keys(want))).toEqual(want)
+  })
+
+  // Claude Code draws a Text's dimColor in the theme's inactive color: this
+  // is the hint as it drew before 0.6.1, and as its cancel key draws.
+  test("by default draws the form's Enter hint, for a new agent or a new name, in Claude Code's color for hints", async ($, on) => {
+    await machine($, on)
+    const ui = await mount($, { isFocused: true })
+
+    await ui.press({ key: 'key-spawn' })
+    expect((await ui.find({ type: 'Text', text: '↵ start' }))?.props).toEqual({ color: 'inactive' })
+    await ui.press({ key: 'composer-cancel' })
+    await moveTo($, 'toggle-self')
+    await ui.press({ key: 'key-rename' })
+    expect((await ui.find({ type: 'Text', text: '↵ rename' }))?.props).toEqual({ color: 'inactive' })
+  })
+
+  test("by default draws the headings bold in no color: the terminal's own text color", async ($, on) => {
+    const ui = await scene($, on)
+
+    const bold = [{ bold: true }]
+    expect(await headings(ui)).toEqual({ Now: bold, Plan: bold, Agents: bold, Sessions: bold })
+  })
+
+  test('by default draws the headings inside an agent, Task and Activity, bold in no color too', async ($, on) => {
+    loops(on)
+    await machine($, on, { listed: [LISTED[2]] })
+    await spawn($, 'a1', 'find loaders', { prompt: 'Find where hooks are loaded.' })
+    const ui = await mount($, { isFocused: true })
+    await moveTo($, 'toggle-agent-a1')
+    await ui.press({ key: 'key-into' })
+
+    const bold = [{ bold: true }]
+    expect(await headings(ui, ['Task', 'Activity'])).toEqual({ Task: bold, Activity: bold })
+  })
+
+  test("draws the headings in no color for a Heading color glimt can't read", { options: { headingColor: 'teal' } }, async ($, on) => {
+    const ui = await scene($, on)
+
+    const bold = [{ bold: true }]
+    expect(await headings(ui)).toEqual({ Now: bold, Plan: bold, Agents: bold, Sessions: bold })
   })
 
   test(
@@ -163,7 +212,7 @@ describe('colors', () => {
   })
 
   test(
-    'draws the quiet text of the empty pane, an agent gone into, the key list and the chat in the Quiet text color too',
+    'draws the quiet text of the empty pane, an agent gone into, the key list, the form and the chat in the Quiet text color too',
     { options: SET },
     async ($, on) => {
       loops(on)
@@ -182,6 +231,10 @@ describe('colors', () => {
 
       await ui.press({ key: 'key-help' })
       expect(await paint(ui, ['glimt · github.com/mmedum/glimt'])).toEqual({ 'glimt · github.com/mmedum/glimt': ['#7aa2f7'] })
+
+      // The form's Enter hint, beside its cancel key.
+      await ui.press({ key: 'help-spawn' })
+      expect(await paint(ui, ['↵ start'])).toEqual({ '↵ start': ['#7aa2f7'] })
 
       // A running agent's row in the chat, squeezed to one line while the pane is drawn.
       const row = await $.ui.mount({
