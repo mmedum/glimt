@@ -297,6 +297,7 @@ export type AgentStop = { asked: string | null; answer: (isYes: boolean) => void
 
 export function agentSection(view: View, main: Agent | undefined, team: Agent[], open: readonly string[], room: number, stop: AgentStop) {
   const { Box, Button, Text } = view.ui
+  const { quiet } = view.colors
   const isNarrow = view.columns < NARROW
   let shown = shownAgents(team)
   let nodes = agentTree(main, shown)
@@ -344,7 +345,7 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
         {heading(view, 'agents-heading', 'Agents', count)}
         {kept.length === 0 && hidden === 0 && (
           <Box key="no-agents">
-            <Text dimColor>No agents running.</Text>
+            <Text color={quiet}>No agents running.</Text>
           </Box>
         )}
         {kept.map(node => {
@@ -359,13 +360,13 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
           return (
             <Box key={`agent-${a.id}`} flexDirection="column">
               <Box flexDirection="row">
-                {branch !== '' && <Text dimColor>{branch}</Text>}
+                {branch !== '' && <Text color={quiet}>{branch}</Text>}
                 {!isMain && (
                   <Button key={`toggle-agent-${a.id}`} plain label={task.length > 0 ? '▾' : '▸'} onPress={() => view.toggle(`agent:${a.id}`)} />
                 )}
                 {!isMain && <Text> </Text>}
                 <Box flexGrow={1}>
-                  <Text dimColor={!isRunning}>
+                  <Text {...(isRunning ? {} : { color: quiet })}>
                     <Text color={color}>{mark}</Text>{' '}
                     <Text inverse={view.cursor === `toggle-agent-${a.id}`}>
                       <Text bold>{type}</Text>
@@ -373,7 +374,7 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
                     </Text>
                   </Text>
                 </Box>
-                {!isNarrow && <Text dimColor> {tally}</Text>}
+                {!isNarrow && <Text color={quiet}> {tally}</Text>}
               </Box>
               {isAsked(a) && (
                 <Box key={`stop-agent-${a.id}`} flexDirection="row" columnGap={2} paddingLeft={4}>
@@ -383,7 +384,7 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
                 </Box>
               )}
               {status.map(line => (
-                <Text dimColor>
+                <Text color={quiet}>
                   {under}
                   {line}
                 </Text>
@@ -391,7 +392,7 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
               {task.length > 0 && (
                 <Box key={`task-${a.id}`} flexDirection="column">
                   {task.map(line => (
-                    <Text dimColor>
+                    <Text color={quiet}>
                       {under}
                       {line}
                     </Text>
@@ -403,7 +404,7 @@ export function agentSection(view: View, main: Agent | undefined, team: Agent[],
         })}
         {hidden > 0 && (
           <Box key="more-agents">
-            <Text dimColor>+{hidden} more</Text>
+            <Text color={quiet}>+{hidden} more</Text>
           </Box>
         )}
       </Box>

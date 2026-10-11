@@ -172,6 +172,7 @@ export function sessionParts(view: View, word: string, phase: Phase | undefined,
 // the idle ones fold into one line, then the rest are counted.
 export function sessionSection(view: View, listing: Listing, room: number) {
   const { Box, Button, Text } = view.ui
+  const { quiet } = view.colors
   const { list, error, open, asked } = listing
   const all = list ?? []
   const waiting = all.filter(isSessionWaiting).length
@@ -229,17 +230,17 @@ export function sessionSection(view: View, listing: Listing, room: number) {
         )}
         {list === null && error === null && (
           <Box key="no-sessions">
-            <Text dimColor>Reading the sessions…</Text>
+            <Text color={quiet}>Reading the sessions…</Text>
           </Box>
         )}
         {list !== null && list.length === 0 && (
           <Box key="no-sessions">
-            <Text dimColor>No other sessions.</Text>
+            <Text color={quiet}>No other sessions.</Text>
           </Box>
         )}
         {shown.map(s => {
           const crew = crews.get(s.sessionId)
-          const { mark, color, word } = sessionMark(s, view.at)
+          const { mark, color, word } = sessionMark(view, s)
           const phase = listing.phases[s.sessionId]
           const isUnseen = phase?.isUnseen === true
           const parts = fitParts(
@@ -258,7 +259,7 @@ export function sessionSection(view: View, listing: Listing, room: number) {
                   onPress={() => view.toggle(`session:${s.sessionId}`)}
                 />
                 <Box flexGrow={1}>
-                  <Text dimColor={word === 'idle' && !isUnseen}>
+                  <Text {...(word === 'idle' && !isUnseen ? { color: quiet } : {})}>
                     {' '}
                     <Text color={color}>{mark}</Text>{' '}
                     <Text bold={isUnseen} inverse={view.cursor === `toggle-session-${s.sessionId}`}>
@@ -278,7 +279,7 @@ export function sessionSection(view: View, listing: Listing, room: number) {
               )}
               {crew !== undefined && (
                 <Box key={`session-detail-${s.sessionId}`} flexDirection="column">
-                  <Text dimColor>
+                  <Text color={quiet}>
                     {'  ⎿ '}
                     {fitStart(placeOf(s), view.columns - 4)}
                   </Text>
@@ -290,14 +291,15 @@ export function sessionSection(view: View, listing: Listing, room: number) {
         })}
         {idle > 0 && (
           <Box key="sessions-idle">
-            <Text dimColor>
-              {'  '}○ {idle} idle
+            <Text color={quiet}>
+              {'  '}
+              <Text color={view.colors.mark}>○</Text> {idle} idle
             </Text>
           </Box>
         )}
         {hidden > 0 && (
           <Box key="sessions-more">
-            <Text dimColor>+{hidden} more</Text>
+            <Text color={quiet}>+{hidden} more</Text>
           </Box>
         )}
       </Box>
@@ -322,6 +324,7 @@ export type RemoteState = { list: RemoteList | undefined; shared: SharedAgent[];
 // last wrote. Opened, an agent shows its task.
 export function remoteSection(view: View, s: Session, state: RemoteState) {
   const { Box, Button, Text } = view.ui
+  const { quiet } = view.colors
   const { list, shared, tasks, open } = state
   const sid = s.sessionId
   if (list === undefined || list.total === 0) {
@@ -330,7 +333,7 @@ export function remoteSection(view: View, s: Session, state: RemoteState) {
       toggles: [],
       node: (
         <Box key={`remote-${sid}`}>
-          <Text dimColor>{list === undefined ? '  └─ Reading its agents…' : '  └─ No agents.'}</Text>
+          <Text color={quiet}>{list === undefined ? '  └─ Reading its agents…' : '  └─ No agents.'}</Text>
         </Box>
       ),
     }
@@ -369,10 +372,10 @@ export function remoteSection(view: View, s: Session, state: RemoteState) {
         {lines.map(line => (
           <Box key={`remote-${sid}-${line.a.id}`} flexDirection="column">
             <Box flexDirection="row">
-              <Text dimColor>{line.branch}</Text>
+              <Text color={quiet}>{line.branch}</Text>
               <Button key={line.key} plain label={line.task.length > 0 ? '▾' : '▸'} onPress={() => view.toggle(line.target)} />
               <Box flexGrow={1}>
-                <Text dimColor={!line.isActive}>
+                <Text {...(line.isActive ? {} : { color: quiet })}>
                   {' '}
                   <Text color={line.mark.color}>{line.mark.mark}</Text>{' '}
                   <Text inverse={view.cursor === line.key}>
@@ -380,10 +383,10 @@ export function remoteSection(view: View, s: Session, state: RemoteState) {
                   </Text>
                 </Text>
               </Box>
-              <Text dimColor> {line.tally}</Text>
+              <Text color={quiet}> {line.tally}</Text>
             </Box>
             {line.task.map(text => (
-              <Text dimColor>
+              <Text color={quiet}>
                 {'       '}
                 {text}
               </Text>
@@ -392,7 +395,7 @@ export function remoteSection(view: View, s: Session, state: RemoteState) {
         ))}
         {older > 0 && (
           <Box key={`remote-older-${sid}`}>
-            <Text dimColor>{`  └─ +${older} older`}</Text>
+            <Text color={quiet}>{`  └─ +${older} older`}</Text>
           </Box>
         )}
       </Box>
@@ -405,13 +408,13 @@ export function isRemoteActive(view: View, a: RemoteAgent, share: SharedAgent | 
 }
 
 // Another session's agent: ◉ while its glimt says it waits on its person,
-// the spinner while it works, ○ once it is quiet.
+// the spinner while it works, ○ in the mark color once it is quiet.
 export function remoteMark(view: View, a: RemoteAgent, share: SharedAgent | undefined): { mark: string; color: string } {
   if (share?.asking !== undefined) {
     return { mark: '◉', color: 'warning' }
   }
 
-  return isRemoteActive(view, a, share) ? { mark: spin(view.at), color: 'claude' } : { mark: '○', color: 'subtle' }
+  return isRemoteActive(view, a, share) ? { mark: spin(view.at), color: 'claude' } : { mark: '○', color: view.colors.mark }
 }
 
 // A running agent its glimt shares: its time and what it runs, or the tool it
@@ -450,11 +453,11 @@ export function sessionState(s: Session): SessionState {
 const WANTS: Record<string, 'approve' | 'answer'> = { 'permission prompt': 'approve', 'sandbox request': 'approve', 'input needed': 'answer' }
 
 // A session's mark and word: the spinner while it works, ◉ while it waits
-// for its person, ○ while it idles; a background session that ended keeps
-// the agents' marks, ✗ failed and ■ stopped, and one done says so. The word
-// says it again without color, and a waiting session's says what it wants,
-// where it says why it waits.
-export function sessionMark(s: Session, at: number): { mark: string; color: string; word: string } {
+// for its person, ○ while it idles, in the mark color; a background session
+// that ended keeps the agents' marks, ✗ failed and ■ stopped, and one done
+// says so. The word says it again without color, and a waiting session's
+// says what it wants, where it says why it waits.
+export function sessionMark(view: View, s: Session): { mark: string; color: string; word: string } {
   const state = sessionState(s)
   if (state === 'waiting') {
     return { mark: '◉', color: 'warning', word: WANTS[s.waitingFor ?? ''] ?? 'waiting' }
@@ -466,10 +469,10 @@ export function sessionMark(s: Session, at: number): { mark: string; color: stri
     return { mark: '■', color: 'warning', word: 'stopped' }
   }
   if (state === 'idle' && s.state === 'done') {
-    return { mark: '○', color: 'subtle', word: 'done' }
+    return { mark: '○', color: view.colors.mark, word: 'done' }
   }
 
-  return state === 'working' ? { mark: spin(at), color: 'claude', word: 'working' } : { mark: '○', color: 'subtle', word: 'idle' }
+  return state === 'working' ? { mark: spin(view.at), color: 'claude', word: 'working' } : { mark: '○', color: view.colors.mark, word: 'idle' }
 }
 
 // The word, and how long the session has been in its state when glimt saw

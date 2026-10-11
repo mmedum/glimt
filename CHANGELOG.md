@@ -4,6 +4,18 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-11
+
+### Added
+
+- Quiet text color, Mark color and Heading color options, for glimt's quiet text, the marks of what is still to do or idle, and its section headings. Each takes a theme role or a color, and by default follows `/theme`.
+- In a color option, a color name, `ansi256(n)` and `ansi:<name>` are drawn in the terminal's own palette.
+
+### Changed
+
+- The `☐` of a step to do, and the `○` of an idle or done session and of another session's quiet agent, are drawn in Claude Code's `inactive` color instead of `subtle`, which was nearly invisible on a dark background.
+- glimt has a new icon: a calm control board where one lamp lights when something needs you.
+
 ## [0.5.0] - 2026-10-10
 
 ### Changed
@@ -81,7 +93,8 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 - New agents here (`n`) or as a background session (`s`), rename (`r`), clear (`c`), attach (`a`) and stop (`x`).
 - The key list (`i`), a spinner on whatever is working with still marks for the rest, and a layout that keeps the sessions in place while agents come and go.
 
-[Unreleased]: https://github.com/mmedum/glimt/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/mmedum/glimt/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/mmedum/glimt/releases/tag/v0.6.0
 [0.5.0]: https://github.com/mmedum/glimt/releases/tag/v0.5.0
 [0.4.0]: https://github.com/mmedum/glimt/releases/tag/v0.4.0
 [0.3.2]: https://github.com/mmedum/glimt/releases/tag/v0.3.2

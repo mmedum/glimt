@@ -11,7 +11,7 @@ A quiet side pane for Claude Code: what this session is doing, its plan, its age
 
 _glimt_ is Danish for a glimpse, a brief flash of light. Say it like _glimpse_ without the _-pse_: GLIMT, with a short _i_.
 
-Its icon says what it does: everything stays in line; the one that needs you steps out.
+Its icon says what it does: a calm board of everything at a glance; one lamp lights when something needs you.
 
 ![glimt beside a session: this session, Now, the plan with its steps, two agents at work, and three other sessions, one waiting for approval](docs/screenshot.png)
 
@@ -53,9 +53,14 @@ A waiting session says what it wants: `approve` for a permission prompt, `answer
 
 ## Settings
 
-glimt has one option. Set it with `/plugin configure glimt@glimt` in Claude Code, then restart Claude Code.
+glimt has four options. Set them in `/config` (type `glimt` to find them) or with `/plugin configure glimt@glimt`, then restart Claude Code.
 
 - **Notifications** (on by default): a notification when a background session starts waiting for you, finishes or fails. With glimt open in several terminals, only one of them sends it.
+- **Quiet text color** (`inactive` by default, Claude Code's own color for hints and timestamps): hints, counts, times, finished rows and the tree's lines.
+- **Mark color** (`inactive` by default): the `☐` of a step to do and the `○` of an idle session or agent. The other marks keep their status colors.
+- **Heading color** (`text` by default, Claude Code's color for text): the section headings, such as Now and Plan.
+
+By default the colors follow `/theme`, light or dark. A color option takes another role, such as `claude` or `success`, or a color: `#7aa2f7`, `rgb(122,162,247)`, `ansi256(110)` or `ansi:cyan`. A value glimt can't read leaves the default. To restyle quiet text all over Claude Code, override `inactive` in a [custom theme](https://code.claude.com/docs/en/terminal-config#create-a-custom-theme) instead; a hex or `rgb()` color stays the same in light and dark, while `ansi256()` and `ansi:` colors follow your terminal's own palette. The keys and the way back (`← Overview`) stay `inactive` whatever you set: they are buttons, and Claude Code gives a mod's buttons no color of their own.
 
 An agent with a call waiting for your approval shows `◉` and `approve` with the tool and what it runs, as in `approve Bash · git push`. Claude Code tells a mod when a call is put to you, not when you answer, so the mark stays until that call ends.
 
@@ -72,6 +77,7 @@ Mods run with your permissions, so here is everything glimt touches. `claude plu
 - Each listed session's transcript under `~/.claude/projects/`, for the title Claude Code gave it: once, whether the session was ever renamed, and while it never was, the transcript's last 64 KiB every 30 seconds while the pane is drawn.
 - Under `~/.claude/projects/` (or `$CLAUDE_CONFIG_DIR/projects/`), for a session you open: its subagents' file names and `.meta.json` files every 5 seconds, its transcript's last 128 KiB every 2 seconds while you are inside it, and an agent's first line when you open that agent.
 - The environment variables `HOME` and `CLAUDE_CONFIG_DIR`, only to find that folder and to write paths as `~`. It reads no credentials.
+- Its options, as set in `/config` or with `/plugin configure glimt@glimt`: Notifications and the three colors.
 
 ### What it runs
 

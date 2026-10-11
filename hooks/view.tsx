@@ -7,9 +7,16 @@ import type { Part } from './text'
 export type Ui = Pick<ElementTable, 'Box' | 'Text' | 'Button'>
 export type InputElement = ElementTable<'terminal' | 'desktop'>['Input']
 
+// The color options, each a theme role or a color (see paint.ts): the quiet
+// text, the marks that carry no status (a step to do, an idle session or
+// agent) and the headings; the status marks keep the theme's colors. Quiet
+// text goes without dimColor, which would win over its color. A Button
+// takes no color, so the keys stay dimColor: the theme's inactive.
+export type Colors = { quiet: string; mark: string; heading: string }
+
 // What drawing needs beside the state: the elements (an Input where the
-// surface has one), the width, the time, the toggle the cursor is on, and
-// what pressing a toggle does.
+// surface has one), the width, the time, the toggle the cursor is on, what
+// pressing a toggle does, and the colors.
 export type View = {
   ui: Ui
   Input?: InputElement | undefined
@@ -18,39 +25,41 @@ export type View = {
   isTurnRunning: boolean
   cursor: string | null
   toggle: (id: string) => void
+  colors: Colors
 }
 
 // A section's heading: its label, bold, and what the section counts right
-// beside it, dim. Nearness ties the count to its label; the blank row above
-// each section sets the sections apart.
-export function heading({ ui: { Box, Text }, columns }: View, key: string, label: string, count: string) {
+// beside it, quiet. Nearness ties the count to its label; the blank row
+// above each section sets the sections apart.
+export function heading({ ui: { Box, Text }, columns, colors }: View, key: string, label: string, count: string) {
   const shown = fit(label, count === '' ? columns : Math.max(1, columns - cells(count) - 2))
 
   return (
     <Box key={key} flexDirection="row">
-      <Text bold>{shown}</Text>
-      {count !== '' && <Text dimColor>{fit(`  ${count}`, columns - cells(shown))}</Text>}
+      <Text bold color={colors.heading}>
+        {shown}
+      </Text>
+      {count !== '' && <Text color={colors.quiet}>{fit(`  ${count}`, columns - cells(shown))}</Text>}
     </Box>
   )
 }
 
-// A row of facts joined by dim " · ": each dim, or in its own color (amber
-// for a risk) or at full weight (a limit nearly reached).
-export function partsNode({ ui: { Text } }: View, parts: Part[]) {
+// A row of facts joined by quiet " · ": each quiet, or in its own color
+// (amber for a risk) or at full weight (a limit nearly reached).
+export function partsNode({ ui: { Text }, colors }: View, parts: Part[]) {
   return (
     <Text>
-      {parts.map((part, i) => (
-        <Text>
-          {i > 0 && <Text dimColor> · </Text>}
-          <Text
-            {...(part.color === undefined ? {} : { color: part.color })}
-            bold={part.isBold === true}
-            dimColor={part.color === undefined && part.isBold !== true}
-          >
-            {part.text}
+      {parts.map((part, i) => {
+        const color = part.color ?? (part.isBold === true ? undefined : colors.quiet)
+        return (
+          <Text>
+            {i > 0 && <Text color={colors.quiet}> · </Text>}
+            <Text {...(color === undefined ? {} : { color })} bold={part.isBold === true}>
+              {part.text}
+            </Text>
           </Text>
-        </Text>
-      ))}
+        )
+      })}
     </Text>
   )
 }

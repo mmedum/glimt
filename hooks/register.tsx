@@ -25,6 +25,7 @@ import { agentSection, askCall, askingOf, contextTokens, isStoppable, isTurnRunn
 import type { Spawned } from './agents'
 import { FEED_KEPT, TAIL_BYTES, callLine, drillSection, isShownText, lastModel, parseTranscript, titleOf } from './drill'
 import { FORM_ROWS, composerSection, helpSection, keySection, selfSection } from './keys'
+import { colorOf } from './paint'
 import { applyUpdate, nowSection, parentFrom, planLines, planSection, planTitle, planUnits, rowCount } from './plan'
 import type { StepUpdate } from './plan'
 import {
@@ -118,6 +119,11 @@ const metas = new Map<string, { type: string; description: string }>()
 
 export const register: Register = (on, options) => {
   runtime.notifies = options.notifications !== false
+  runtime.colors = {
+    quiet: colorOf(options.quietColor, 'inactive'),
+    mark: colorOf(options.markColor, 'inactive'),
+    heading: colorOf(options.headingColor, 'text'),
+  }
 
   // The command last: a refused registration then leaves the pane and its clock running.
   on('session.start', async ($, e, next) => {
@@ -214,7 +220,7 @@ export const register: Register = (on, options) => {
     const description = typeof input.description === 'string' ? input.description : ''
 
     return (
-      <Text dimColor wrap="truncate-end">
+      <Text color={runtime.colors.quiet} wrap="truncate-end">
         {spin(await read($, now))} {type} · {description}
       </Text>
     )
@@ -516,6 +522,7 @@ export const register: Register = (on, options) => {
       isTurnRunning: isTurnRunning(request),
       cursor: await read($, cursor),
       toggle: key => void toggle($, key),
+      colors: runtime.colors,
     }
 
     // This session at the top; the other sessions on the machine, and what
@@ -667,7 +674,7 @@ export const register: Register = (on, options) => {
           {header.node}
           <Box key="empty" flexDirection="column" marginTop={1}>
             {wrap('glimt · the plan, agents and other sessions show here as they start', view.columns).map(text => (
-              <Text dimColor>{text}</Text>
+              <Text color={view.colors.quiet}>{text}</Text>
             ))}
           </Box>
           <Box key="gap" flexGrow={1} />

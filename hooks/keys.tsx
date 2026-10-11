@@ -81,7 +81,7 @@ export function helpSection(view: View, act: HelpActions) {
 
   return (
     <Box key="help" flexDirection="column">
-      <Text dimColor>{fit('glimt · github.com/mmedum/glimt', view.columns)}</Text>
+      <Text color={view.colors.quiet}>{fit('glimt · github.com/mmedum/glimt', view.columns)}</Text>
       <Box key="help-keys" flexDirection="column" marginTop={1}>
         {KEY_LIST.map(([keys, what]) => line(keys, what))}
         <Button key="help-spawn" plain hotkey="n" label="new agent here" onPress={act.spawn} />
@@ -152,7 +152,7 @@ export function selfSection(view: View, state: SelfState) {
             <Text bold inverse={view.cursor === 'toggle-self'}>
               {fit(name ?? 'this session', view.columns - 16)}
             </Text>
-            {name !== undefined && <Text dimColor>{'  this session'}</Text>}
+            {name !== undefined && <Text color={view.colors.quiet}>{'  this session'}</Text>}
           </Text>
         </Box>
         {status.length > 0 && (
@@ -161,7 +161,7 @@ export function selfSection(view: View, state: SelfState) {
           </Box>
         )}
         {isOpen && session !== undefined && (
-          <Text dimColor>
+          <Text color={view.colors.quiet}>
             {'  ⎿ '}
             {fitStart(`${where}${use} · ${session.id ?? session.sessionId}`, view.columns - 4)}
           </Text>
@@ -191,12 +191,13 @@ export const FORM_ROWS = 3
 // task for a new agent here (n) or in a new background session (s), or a new
 // name for a session (r). Its label says which, so nothing is left to choose.
 // Its field holds the keyboard: Enter starts, Enter on an empty field or
-// leaving it (Tab, or a click on cancel) closes it.
+// leaving it (Tab, or a click on cancel) closes it. The Enter hint is drawn
+// as its cancel key is, dim, so the two read as one row of keys.
 export function composerSection(view: View, form: Composer, list: Session[], act: ComposerActions) {
   const { Box, Button, Text } = view.ui
   const { Input } = view
   if (Input === undefined) {
-    return <Text dimColor>Typing here needs the terminal or the desktop app.</Text>
+    return <Text color={view.colors.quiet}>Typing here needs the terminal or the desktop app.</Text>
   }
 
   const isSpawn = form.kind === 'spawn'

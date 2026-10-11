@@ -202,7 +202,7 @@ export function nowSection(view: View, list: Step[]) {
         {heading(view, 'now-heading', 'Now', since === undefined ? '' : duration(view.at - since))}
         <Box key="now" flexDirection="column">
           {active.length === 0 ? (
-            <Text dimColor>No step in progress.</Text>
+            <Text color={view.colors.quiet}>No step in progress.</Text>
           ) : (
             active.map(step => <Text color="claude">{fit(`${mark} ${step.activeForm ?? step.subject}`, view.columns)}</Text>)
           )}
@@ -213,16 +213,22 @@ export function nowSection(view: View, list: Step[]) {
 }
 
 // Claude Code's checklist marks: ☒ done, ☐ to do; ◐ for the step in progress.
-export const STEP_MARK: Record<StepStatus, { mark: string; color: string }> = {
-  completed: { mark: '☒', color: 'success' },
-  in_progress: { mark: '◐', color: 'claude' },
-  pending: { mark: '☐', color: 'subtle' },
+// A step to do carries no status, so its mark takes the mark color.
+export function stepMark(view: View, status: StepStatus): { mark: string; color: string } {
+  const marks: Record<StepStatus, { mark: string; color: string }> = {
+    completed: { mark: '☒', color: 'success' },
+    in_progress: { mark: '◐', color: 'claude' },
+    pending: { mark: '☐', color: view.colors.mark },
+  }
+
+  return marks[status]
 }
 
 // Empty, the plan says why where it knows: Claude has no task list here,
 // which depends on the model.
 export function planSection(view: View, approved: Plan | null, list: Step[], lines: PlanLine[], hasTaskList: boolean | null) {
   const { Box, Button, Text } = view.ui
+  const { quiet } = view.colors
   const done = list.filter(step => step.status === 'completed').length
 
   return (
@@ -230,14 +236,14 @@ export function planSection(view: View, approved: Plan | null, list: Step[], lin
       {heading(view, 'plan-heading', approved === null ? 'Plan' : `Plan · ${approved.title}`, list.length === 0 ? '' : `${done}/${list.length}`)}
       {list.length === 0 && (
         <Box key="no-steps">
-          <Text dimColor>{hasTaskList === false ? 'No task list in this session.' : 'No steps yet.'}</Text>
+          <Text color={quiet}>{hasTaskList === false ? 'No task list in this session.' : 'No steps yet.'}</Text>
         </Box>
       )}
       {lines.map(line => {
         if (line.kind === 'done') {
           return (
             <Box key="folded">
-              <Text dimColor>
+              <Text color={quiet}>
                 {'  '}
                 <Text color="success">☒</Text> {line.count} done
               </Text>
@@ -247,8 +253,9 @@ export function planSection(view: View, approved: Plan | null, list: Step[], lin
         if (line.kind === 'more') {
           return (
             <Box key="more">
-              <Text dimColor>
-                {'  '}☐ {line.count} more
+              <Text color={quiet}>
+                {'  '}
+                <Text color={view.colors.mark}>☐</Text> {line.count} more
               </Text>
             </Box>
           )
@@ -257,14 +264,14 @@ export function planSection(view: View, approved: Plan | null, list: Step[], lin
         const { step, detail, depth } = line
         const indent = ' '.repeat(depth * INDENT)
         const isOpen = detail.length > 0
-        const { mark, color } = STEP_MARK[step.status]
+        const { mark, color } = stepMark(view, step.status)
 
         return (
           <Box key={`step-${step.id}`} flexDirection="column">
             <Box flexDirection="row">
               {indent !== '' && <Text>{indent}</Text>}
               <Button key={`toggle-${step.id}`} plain label={isOpen ? '▾' : '▸'} onPress={() => view.toggle(step.id)} />
-              <Text dimColor={step.status === 'completed'} bold={step.status === 'in_progress'}>
+              <Text {...(step.status === 'completed' ? { color: quiet } : {})} bold={step.status === 'in_progress'}>
                 {' '}
                 <Text color={color}>{mark}</Text>{' '}
                 <Text inverse={view.cursor === `toggle-${step.id}`}>{fit(step.subject, view.columns - 4 - indent.length)}</Text>
@@ -273,7 +280,7 @@ export function planSection(view: View, approved: Plan | null, list: Step[], lin
             {isOpen && (
               <Box key={`detail-${step.id}`} flexDirection="column" paddingLeft={4 + indent.length}>
                 {detail.map(text => (
-                  <Text dimColor>{text}</Text>
+                  <Text color={quiet}>{text}</Text>
                 ))}
               </Box>
             )}

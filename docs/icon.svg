@@ -1,7 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="glimt">
-  <title>glimt: everything stays in line; the one that needs you steps out</title>
+  <title>glimt: a calm board of everything at a glance; one lamp lights when something needs you</title>
   <rect width="1024" height="1024" fill="#1c1c1c"/>
-  <circle cx="204" cy="616" r="104" fill="#6f6f6f"/>
-  <circle cx="512" cy="616" r="104" fill="#6f6f6f"/>
-  <circle cx="820" cy="408" r="104" fill="#e8a33d"/>
+  <rect x="130" y="130" width="764" height="764" rx="72" fill="#2b2b2b"/>
+  <circle cx="276" cy="276" r="78" fill="#6f6f6f"/>
+  <circle cx="512" cy="276" r="78" fill="#3d3d3d"/>
+  <circle cx="748" cy="276" r="78" fill="#e8a33d"/>
+  <circle cx="276" cy="512" r="78" fill="#6f6f6f"/>
+  <circle cx="512" cy="512" r="78" fill="#6f6f6f"/>
+  <circle cx="748" cy="512" r="78" fill="#3d3d3d"/>
+  <circle cx="276" cy="748" r="78" fill="#3d3d3d"/>
+  <circle cx="512" cy="748" r="78" fill="#6f6f6f"/>
+  <circle cx="748" cy="748" r="78" fill="#6f6f6f"/>
 </svg>

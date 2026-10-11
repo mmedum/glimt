@@ -166,11 +166,12 @@ export const FEED_INLINE = 20
 export function drillSection(view: View, drill: Drill) {
   const { Box, Button, Text } = view.ui
   const { Input } = view
+  const { quiet } = view.colors
   const { into, agent, session, remoteAgent, shared, feed: got, asked, act } = drill
   const width = view.columns
   const isGone = into.kind === 'agent' ? agent === undefined : into.kind === 'session' ? session === undefined : remoteAgent === undefined
 
-  // The title, and the dim lines under it: what it does now, and where.
+  // The title, and the quiet lines under it: what it does now, and where.
   let title: { mark: string; color: string; name: string } | undefined
   let facts: string[] = []
   let taskText: string | undefined
@@ -185,7 +186,7 @@ export function drillSection(view: View, drill: Drill) {
     }
     taskText = agent.task
   } else if (into.kind === 'session' && session !== undefined) {
-    const { mark, color, word } = sessionMark(session, view.at)
+    const { mark, color, word } = sessionMark(view, session)
     title = { mark, color, name: session.name }
     const mode = drill.mode === undefined ? '' : ` · ${modeWords(drill.mode)}`
     facts = [`${withModel(stateText(word, drill.phase, view.at), got?.model)}${mode}`, fitStart(`⎿ ${placeOf(session, got?.branch)}`, width - 2)]
@@ -283,14 +284,14 @@ export function drillSection(view: View, drill: Drill) {
         />
         <Box key="drill-title" flexDirection="column" marginTop={1}>
           {title === undefined ? (
-            <Text dimColor>{into.kind === 'session' ? 'This session is no longer listed.' : 'This agent is no longer listed.'}</Text>
+            <Text color={quiet}>{into.kind === 'session' ? 'This session is no longer listed.' : 'This agent is no longer listed.'}</Text>
           ) : (
             <Text>
               <Text color={title.color}>{title.mark}</Text> <Text bold>{fit(title.name, width - 2)}</Text>
             </Text>
           )}
           {facts.map(line => (
-            <Text dimColor>
+            <Text color={quiet}>
               {'  '}
               {line}
             </Text>
@@ -318,7 +319,7 @@ export function drillSection(view: View, drill: Drill) {
           <Box key="drill-task" flexDirection="column" marginTop={1}>
             {heading(view, 'task-heading', 'Task', '')}
             {task.map(line => (
-              <Text dimColor>
+              <Text color={quiet}>
                 {'  '}
                 {line}
               </Text>
@@ -329,15 +330,15 @@ export function drillSection(view: View, drill: Drill) {
           {heading(view, 'activity-heading', 'Activity', '')}
           <Box key="activity" flexDirection="column">
             {got === null ? (
-              <Text dimColor>Reading…</Text>
+              <Text color={quiet}>Reading…</Text>
             ) : got.error !== undefined ? (
               <Text color="error">{fit(got.error, width)}</Text>
             ) : shown.length === 0 ? (
-              <Text dimColor>Nothing yet.</Text>
+              <Text color={quiet}>Nothing yet.</Text>
             ) : (
               shown.flatMap(({ item, lines }) =>
                 lines.map(line => (
-                  <Text bold={item.kind === 'asked'} dimColor={item.kind === 'call'}>
+                  <Text bold={item.kind === 'asked'} {...(item.kind === 'call' ? { color: quiet } : {})}>
                     {line}
                   </Text>
                 )),
@@ -371,7 +372,7 @@ export function drillSection(view: View, drill: Drill) {
   }
 }
 
-// An activity item's lines: a call on one, dim, under ⎿ as Claude Code nests
+// An activity item's lines: a call on one, quiet, under ⎿ as Claude Code nests
 // a call; what was asked (›) on up to two and what Claude said (●) on up to
 // three, wrapped.
 export function itemLines(item: Activity, width: number): string[] {
