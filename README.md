@@ -13,7 +13,7 @@ _glimt_ is Danish for a glimpse, a brief flash of light. Say it like _glimpse_ w
 
 Its icon says what it does: a calm board of everything at a glance; one lamp lights when something needs you.
 
-![glimt beside a session: this session, Now, the plan with its steps, two agents at work, and three other sessions, one waiting for approval](docs/screenshot.png)
+![glimt beside a session: this session, Now, the plan with its finished steps folded, two agents at work, and three other sessions, one waiting for approval](docs/screenshot.png)
 
 ## Install
 
