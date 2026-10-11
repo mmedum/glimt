@@ -9,6 +9,11 @@ import type { Part } from './text'
 import { cursorStyle, heading, partsNode } from './view'
 import type { View } from './view'
 
+// How often the session list is read again while the pane is drawn, and how
+// often a session shares its running agents (when they changed) and looks
+// for a name another session's glimt asked it to take.
+export const POLL_MS = 5000
+
 // Shared agents are written again this often unchanged, so a reader can tell
 // a quiet session from one whose glimt has gone: older than STALE_MS, a
 // share is not shown.
@@ -76,12 +81,39 @@ export function isShared(value: unknown): value is Shared {
 }
 
 // Waiting for its person first, then working, then failed or stopped, then
-// done or idle; the list's order within each. Short of room, "+N more" hides
-// rows from the end of this order.
+// done or idle; by when they started within each, so a row moves only when
+// its state changes. Being in bold moves nothing: short of room,
+// sessionSection gives up the quiet rows first instead.
 export function sortSessions(list: Session[]): Session[] {
   const rank: Record<SessionState, number> = { waiting: 0, working: 1, failed: 2, stopped: 2, done: 3, idle: 3 }
 
-  return list.toSorted((a, b) => rank[sessionState(a)] - rank[sessionState(b)])
+  return list.toSorted((a, b) => rank[sessionState(a)] - rank[sessionState(b)] || a.startedAt - b.startedAt)
+}
+
+// Whether a session's name is drawn bold: its state, other than work, began
+// after the person last reacted to it. glimt sees a state begin at the read
+// after it did, up to POLL_MS late, so a reaction that close before counts.
+// A state glimt never saw begin is no news.
+export function isUnseen(phase: Phase | undefined, seenAt: number | undefined): boolean {
+  return phase?.since !== undefined && phase.state !== 'working' && (seenAt === undefined || seenAt + POLL_MS < phase.since)
+}
+
+// What this glimt knows of the person's reactions after a read: its own and
+// every share's, the latest of each, for the sessions in `ids` alone. What
+// another glimt knew is kept, so it outlasts that glimt. The same record
+// when nothing is new.
+export function nextSeen(own: Record<string, number>, shared: Record<string, Shared>, ids: ReadonlySet<string>): Record<string, number> {
+  const next: Record<string, number> = {}
+  for (const known of [own, ...Object.values(shared).map(share => (isRecord(share.seen) ? share.seen : {}))]) {
+    for (const [id, at] of Object.entries(known)) {
+      if (ids.has(id) && typeof at === 'number' && at > (next[id] ?? -Infinity)) {
+        next[id] = at
+      }
+    }
+  }
+  const isSame = Object.keys(next).length === Object.keys(own).length && Object.entries(next).every(([id, at]) => own[id] === at)
+
+  return isSame ? own : next
 }
 
 // The sessions in what `claude agents --json` printed; an entry with no
@@ -136,6 +168,8 @@ export type Listing = {
   asked: string | null
   answer: (isYes: boolean) => void
   phases: Record<string, Phase>
+  // When the person last reacted to each session, by id.
+  seen: Record<string, number>
   // The folders more than one live session runs in.
   folders: ReadonlySet<string>
 }
@@ -166,11 +200,13 @@ export function sessionParts(view: View, word: string, phase: Phase | undefined,
 
 // The other Claude Code sessions on the machine in `room` rows, one line
 // each, in sortSessions' order, with how long they have been in that state
-// and how many agents their glimt says run; a name in bold stopped or ended
-// since the person last opened it. Opened, a session shows where it runs and
-// its id, then its agents (l goes into the session, or into one of them);
-// after x, it asks whether to stop it. Past the room, the idle ones fold
-// into one line, then the last rows are counted. A session that ended is not
+// and how many agents their glimt says run; a name in bold changed state
+// since the person last reacted to it (see isUnseen). Opened, a session
+// shows where it runs and its id, then its agents (l goes into the session,
+// or into one of them); after x, it asks whether to stop it. Past the room,
+// the idle ones not in bold fold into one line, then rows are counted from
+// the end: the quiet ones first, those that neither wait nor are in bold,
+// and the rest only when those alone don't fit. A session that ended is not
 // idle: it keeps its row, which says how it ended.
 export function sessionSection(view: View, listing: Listing, room: number) {
   const { Box, Button, Text } = view.ui
@@ -196,18 +232,22 @@ export function sessionSection(view: View, listing: Listing, room: number) {
   }
   const total = (shown: Session[]) => shown.reduce((sum, s) => sum + rowsOf(s), 0)
   const budget = room - 1 - (error === null ? 0 : 1)
+  const bold = new Set(all.filter(s => isUnseen(listing.phases[s.sessionId], listing.seen[s.sessionId])).map(s => s.sessionId))
+  const isBold = (s: Session) => bold.has(s.sessionId)
   // An opened session stays on show, whatever else folds.
   const isOpen = (s: Session) => crews.get(s.sessionId) !== undefined
+  const isQuiet = (s: Session) => !isOpen(s) && !isBold(s) && sessionState(s) !== 'waiting'
   let shown = all
   let idle = 0
   if (total(shown) > budget) {
-    shown = all.filter(s => sessionState(s) !== 'idle' || isOpen(s))
+    shown = all.filter(s => sessionState(s) !== 'idle' || isOpen(s) || isBold(s))
     idle = all.length - shown.length
   }
   let hidden = 0
   const extra = () => (idle > 0 ? 1 : 0) + (hidden > 0 ? 1 : 0)
   while (total(shown) + extra() > budget) {
-    const last = shown.map(isOpen).lastIndexOf(false)
+    const lastQuiet = shown.map(isQuiet).lastIndexOf(true)
+    const last = lastQuiet === -1 ? shown.map(isOpen).lastIndexOf(false) : lastQuiet
     if (last === -1) {
       break
     }
@@ -244,7 +284,6 @@ export function sessionSection(view: View, listing: Listing, room: number) {
           const crew = crews.get(s.sessionId)
           const { mark, color, word } = sessionMark(view, s)
           const phase = listing.phases[s.sessionId]
-          const isUnseen = phase?.isUnseen === true
           const parts = fitParts(
             sessionParts(view, word, phase, listing.shared[s.sessionId], listing.folders.has(s.cwd)),
             view.columns - 4 - MIN_NAME - 1,
@@ -262,10 +301,10 @@ export function sessionSection(view: View, listing: Listing, room: number) {
                   onPress={() => view.toggle(`session:${s.sessionId}`)}
                 />
                 <Box flexGrow={1}>
-                  <Text {...(word === 'idle' && !isUnseen ? { color: quiet } : {})}>
+                  <Text {...(word === 'idle' && !isBold(s) ? { color: quiet } : {})}>
                     {' '}
                     <Text color={color}>{mark}</Text>{' '}
-                    <Text bold={isUnseen} {...cursor.name}>
+                    <Text bold={isBold(s)} {...cursor.name}>
                       {fit(s.name, view.columns - 4 - cells(tally) - 1)}
                     </Text>
                   </Text>
@@ -494,15 +533,13 @@ export function stateText(word: string, phase: Phase | undefined, at: number): s
 
 // The sessions' phases after a read at `at`. A session glimt meets for the
 // first time is in a phase of unknown age; one whose state changed, ending
-// included, starts a phase now, unseen unless it went to work; a session no
-// longer listed is dropped.
+// included, starts a phase now; a session no longer listed is dropped.
 export function nextPhases(before: Record<string, Phase>, list: Session[], at: number): Record<string, Phase> {
   return Object.fromEntries(
     list.map(s => {
       const state = sessionState(s)
       const was = before[s.sessionId]
-      const phase: Phase =
-        was === undefined ? { state, isUnseen: false } : was.state === state ? was : { state, since: at, isUnseen: state !== 'working' }
+      const phase: Phase = was === undefined ? { state } : was.state === state ? was : { state, since: at }
       return [s.sessionId, phase]
     }),
   )

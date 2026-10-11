@@ -4,6 +4,14 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-11
+
+### Changed
+
+- A session's name in bold now means it stopped or ended since you last reacted to it, wherever you did: opening it in any session's glimt pane, typing or sending a prompt in its own terminal, or pressing in its glimt pane there. Stopping it with `x` counts too. Before, only opening it in this pane took the bold off, so a session you worked with in its own terminal stayed bold. Each glimt shares when you reacted (never what you typed) through the plugin store.
+- Short of room, an idle session in bold keeps its row instead of folding into `○ N idle`, and `+N more` gives up working rows and rows you have seen before one that waits or is in bold.
+- Within each state, sessions are sorted by when they started, so a row moves only when its state changes.
+
 ## [0.6.3] - 2026-10-11
 
 ### Fixed
@@ -128,7 +136,8 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 - New agents here (`n`) or as a background session (`s`), rename (`r`), clear (`c`), attach (`a`) and stop (`x`).
 - The key list (`i`), a spinner on whatever is working with still marks for the rest, and a layout that keeps the sessions in place while agents come and go.
 
-[Unreleased]: https://github.com/mmedum/glimt/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/mmedum/glimt/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/mmedum/glimt/releases/tag/v0.7.0
 [0.6.3]: https://github.com/mmedum/glimt/releases/tag/v0.6.3
 [0.6.2]: https://github.com/mmedum/glimt/releases/tag/v0.6.2
 [0.6.1]: https://github.com/mmedum/glimt/releases/tag/v0.6.1

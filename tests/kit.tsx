@@ -96,6 +96,19 @@ export function ask($: Engine, text: string, kind: 'composer' | 'task-notificati
   return $.prompt.submit({ text, wait: false, origin: { kind } })
 }
 
+// The prompt box beneath the plugin: an edit leaves the draft as it was.
+export function promptBox(on: On) {
+  on('prompt.edit', (_$, e) => ({ text: e.text, cursor: e.cursor }))
+}
+
+// The person types `typed` at the end of the draft `text`. The kit's $
+// raises prompt.edit, though its types leave the call out. Needs promptBox.
+export function typeInPrompt($: Engine, text: string, typed: string) {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  const prompt = $.prompt as unknown as { edit: (input: unknown) => Promise<unknown> }
+  return prompt.edit({ text, cursor: text.length, start: text.length, end: text.length, inputText: typed, origin: { kind: 'composer' } })
+}
+
 // A call made in a subagent's loop. The kit's $ carries agentId as the query
 // loop does, though the types of a call's input leave it out.
 export function inAgent<T extends object>(input: T, agentId: string | undefined): T {

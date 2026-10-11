@@ -30,6 +30,7 @@ import { applyUpdate, nowSection, parentFrom, planLines, planSection, planTitle,
 import type { StepUpdate } from './plan'
 import {
   HEARTBEAT_MS,
+  POLL_MS,
   REMOTE_KEPT,
   SHARED_TASK,
   STALE_MS,
@@ -39,6 +40,7 @@ import {
   isNotifier,
   isShared,
   nextPhases,
+  nextSeen,
   sharedFolders,
   parseSessions,
   sessionSection,
@@ -58,10 +60,9 @@ const PERSON: ReadonlySet<PromptOrigin['kind']> = new Set(['composer', 'bridge',
 const AGENT_SHARE = 0.35
 const SESSION_SHARE = 0.25
 
-// How often the session list is read again while the pane is drawn, and how
-// often this session shares its running agents (when they changed) and
-// looks for a name another session's glimt asked it to take.
-const POLL_MS = 5000
+// The person's doings in this session count as one reaction a second at
+// most: typing raises an edit with nearly every key.
+const TOUCH_MS = 1000
 
 // Drilled into another session, its transcript is read again this often,
 // from its last TAIL_BYTES; an agent of this session is read as it acts.
@@ -85,6 +86,7 @@ const cursor = atom({ plugin: 'glimt', key: 'cursor' } as const, null)
 const sessions = atom({ plugin: 'glimt', key: 'sessions' } as const, null)
 const sessionsError = atom({ plugin: 'glimt', key: 'sessionsError' } as const, null)
 const phases = atom({ plugin: 'glimt', key: 'phases' } as const, {})
+const seen = atom({ plugin: 'glimt', key: 'seen' } as const, {})
 const hasTaskList = atom({ plugin: 'glimt', key: 'hasTaskList' } as const, null)
 const mode = atom({ plugin: 'glimt', key: 'mode' } as const, null)
 const limits = atom({ plugin: 'glimt', key: 'limits' } as const, [])
@@ -186,6 +188,9 @@ export const register: Register = (on, options) => {
   // the form.
   on('ui.focus', async ($, e, next) => {
     const key = e.element
+    if (e.requestId === PANE && e.origin.kind === 'person') {
+      await touch($)
+    }
     if (e.requestId === PANE && key !== undefined && runtime.toggles.some(one => one.key === key)) {
       await update($, cursor, () => key)
     }
@@ -258,10 +263,32 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // A new request from the person clears the agents that finished before it.
+  // Whatever the person sends here is a reaction to this session; a new
+  // request also clears the agents that finished before it.
   on('prompt.submit', async ($, e, next) => {
+    if (PERSON.has(e.origin.kind)) {
+      await touch($)
+    }
     if (PERSON.has(e.origin.kind) && !e.text.startsWith('/')) {
       await update($, agents, list => list.filter(a => a.state === 'running'))
+    }
+
+    return next(e)
+  })
+
+  // Typing in the prompt box is a reaction to this session too. Only when
+  // it happens counts: what is typed is never read. The key goes on at once,
+  // so typing never waits on glimt.
+  on('prompt.edit', async ($, e, next) => {
+    void touch($).catch(() => undefined)
+
+    return next(e)
+  })
+
+  // So is a press in this session's pane.
+  on('ui.press', async ($, e, next) => {
+    if (e.requestId === PANE) {
+      await touch($)
     }
 
     return next(e)
@@ -756,6 +783,7 @@ export const register: Register = (on, options) => {
         asked: await read($, stopping),
         answer: isYes => void answerStop($, isYes),
         phases: await read($, phases),
+        seen: await read($, seen),
         folders,
       },
       shareOf(SESSION_SHARE) + spare - Math.max(0, crew.rows - shareOf(AGENT_SHARE)),
@@ -1228,6 +1256,11 @@ async function readSessions($: EngineInterface, isAsked: boolean) {
     void tell($, note.text).catch(() => undefined)
   }
   await loadShared($, list, at).catch(() => undefined)
+  // What the other glimts know of the person's reactions joins what this one
+  // knows, and goes on in its share.
+  const fresh = await read($, shared)
+  const ids = new Set([...list.map(s => s.sessionId), ...(selfId === null ? [] : [selfId])])
+  await update($, seen, own => nextSeen(own, fresh, ids))
 }
 
 // The sessions with Claude Code's own title in place of the name of any
@@ -1305,12 +1338,25 @@ async function noteMode($: EngineInterface, permissionMode: string | undefined, 
   }
 }
 
-// Opening a session, in the list or by going into it, takes the bold off
-// its name.
+// Opening a session, in the list or by going into it, or stopping it, is a
+// reaction to it: the bold comes off its name, in every glimt.
 async function markSeen($: EngineInterface, sessionId: string) {
-  await update($, phases, all => {
-    const phase = all[sessionId]
-    return phase?.isUnseen === true ? { ...all, [sessionId]: { ...phase, isUnseen: false } } : all
+  const at = await $.clock.now()
+  await update($, seen, all => ((all[sessionId] ?? -Infinity) >= at ? all : { ...all, [sessionId]: at }))
+}
+
+// The person did something in this session: typed or sent a prompt, or
+// pressed or moved in its pane.
+async function touch($: EngineInterface) {
+  const id = await read($, self)
+  if (id === null) {
+    return
+  }
+
+  const at = await $.clock.now()
+  await update($, seen, all => {
+    const last = all[id]
+    return last !== undefined && at - last < TOUCH_MS ? all : { ...all, [id]: at }
   })
 }
 
@@ -1357,10 +1403,10 @@ async function settleAgents($: EngineInterface) {
   await update($, agents, list => settled(list, listed, at))
 }
 
-// Every POLL_MS: this session's running agents and how far its plan has come
-// into the store for the other sessions' glimts, when they changed or a
-// heartbeat is due; and any name another session's glimt asked this one to
-// take.
+// Every POLL_MS: this session's running agents, how far its plan has come
+// and what this glimt knows of the person's reactions into the store for
+// the other sessions' glimts, when they changed or a heartbeat is due; and
+// any name another session's glimt asked this one to take.
 async function share($: EngineInterface) {
   const id = await read($, self)
   if (id === null) {
@@ -1385,9 +1431,11 @@ async function share($: EngineInterface) {
   const watching = await read($, isShown)
   const permissions = (await read($, mode)) ?? undefined
   const context = (await read($, focus))?.percent
-  const text = JSON.stringify({ running, progress, watching, permissions, context })
+  const known = await read($, seen)
+  const reactions = Object.keys(known).length === 0 ? undefined : known
+  const text = JSON.stringify({ running, progress, watching, permissions, context, reactions })
   if (text !== runtime.lastShared || at - runtime.lastSharedAt >= HEARTBEAT_MS) {
-    await $.store.set(`agents:${id}`, { at, agents: running, plan: progress, watching, mode: permissions, context })
+    await $.store.set(`agents:${id}`, { at, agents: running, plan: progress, watching, mode: permissions, context, seen: reactions })
     runtime.lastShared = text
     runtime.lastSharedAt = at
   }
@@ -1570,6 +1618,10 @@ async function answerStop($: EngineInterface, isYes: boolean) {
   const ran = await $.process.run(['claude', 'stop', s.id], { timeoutMs: 15_000 }).catch(() => undefined)
   const why = firstLine(ran?.stderr) ?? 'claude stop did not run'
   $.ui.toast(ran?.exitCode === 0 ? `Stopped ${s.name}` : `Could not stop ${s.name}: ${why}`)
+  // Stopped from here, it is no news.
+  if (ran?.exitCode === 0) {
+    await markSeen($, s.sessionId)
+  }
   await readSessions($, true)
 }
 

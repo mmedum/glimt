@@ -96,9 +96,8 @@ export type Session = {
 export type SessionState = 'waiting' | 'working' | 'failed' | 'stopped' | 'done' | 'idle'
 
 // Another session's state as glimt has watched it: since when, undefined
-// while glimt has not seen it begin, and whether it stopped (went idle or
-// waiting, or ended) since the person last opened it.
-export type Phase = { state: SessionState; since?: number | undefined; isUnseen: boolean }
+// while glimt has not seen it begin.
+export type Phase = { state: SessionState; since?: number | undefined }
 
 // A running agent of another session, as that session's glimt shares it
 // through the store every session on the machine reads; `asking` is the tool
@@ -117,7 +116,8 @@ export type SharedAgent = {
 // What a session's glimt shares: when it last did, its running agents, how
 // far its plan has come, whether its pane is drawn (so it reads the session
 // list, and may be the one to notify), its permission mode as last seen,
-// and how full its context window is, in percent.
+// how full its context window is, in percent, and when the person last
+// reacted to each session, as far as it knows.
 export type Shared = {
   at: number
   agents: SharedAgent[]
@@ -125,6 +125,7 @@ export type Shared = {
   watching?: boolean | undefined
   mode?: string | undefined
   context?: number | undefined
+  seen?: Record<string, number> | undefined
 }
 
 // One of the plan's limit windows as Claude Code reports it: `five_hour`,
@@ -189,6 +190,10 @@ declare module 'claude-code' {
       sessionsError: string | null
       // The other sessions' states as glimt watched them, by session id.
       phases: Record<string, Phase>
+      // When the person last reacted to each session, by id, as far as this
+      // glimt knows: opened it in any glimt, or typed, sent a prompt or
+      // pressed in its own terminal. Shared with the other glimts.
+      seen: Record<string, number>
       // Whether this session's requests offer Claude a task list; null
       // before the first. Once one does, it stays true.
       hasTaskList: boolean | null

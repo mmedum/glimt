@@ -84,8 +84,8 @@ describe('sessions', () => {
   test('a session that stops shows its name in bold until it is opened or gone into', async ($, on) => {
     const relisted = { current: undefined as unknown }
     const { clock } = await machine($, on, { listed: DOCS_BUSY, relisted })
-    // docs-site works, so it is the second of the others.
-    const ui = await onSession($, 2)
+    // docs-site works, and started after api-refactor: the third of the others.
+    const ui = await onSession($, 3)
     const isBold = async () => (await ui.findAll({ type: 'Text' })).find(text => text.text === 'docs-site')?.props.bold === true
     expect(await isBold()).toBe(false)
 
@@ -127,6 +127,66 @@ describe('sessions', () => {
 
     expect(await textOf(ui, 'session-d3d04fc1-full')).toBe('▸ ○ release-notes done · <1m')
     expect(await isBold()).toBe(true)
+  })
+
+  // docs-site's glimt shares what its person does in its terminal.
+  test("takes the bold off once the person reacts in the session's own terminal, not for a reaction before it stopped", async ($, on) => {
+    const relisted = { current: undefined as unknown }
+    const { clock, store } = await machine($, on, { listed: DOCS_BUSY, relisted })
+    const ui = await mount($)
+    const isBold = async () => (await ui.findAll({ type: 'Text' })).find(text => text.text === 'docs-site')?.props.bold === true
+
+    // It stops between the read at 3,600,000 that saw it work and the read
+    // at 3,605,000; its person typed there before the first.
+    relisted.current = LISTED
+    await clock.advance(5_000)
+    store.set('agents:1879e383-full', { at: 3_605_000, agents: [], seen: { '1879e383-full': 3_599_999 } })
+    await clock.advance(5_000)
+    expect(await isBold()).toBe(true)
+
+    // And again between the two, which may have been after it stopped.
+    store.set('agents:1879e383-full', { at: 3_610_000, agents: [], seen: { '1879e383-full': 3_600_000 } })
+    await clock.advance(5_000)
+    expect(await isBold()).toBe(false)
+  })
+
+  test('keeps a reaction another glimt shared after that glimt is gone', async ($, on) => {
+    const relisted = { current: undefined as unknown }
+    const { clock, store } = await machine($, on, { listed: DOCS_BUSY, relisted })
+    const ui = await mount($)
+    const isBold = async () => (await ui.findAll({ type: 'Text' })).find(text => text.text === 'docs-site')?.props.bold === true
+
+    // docs-site stops at the read at 3,605,000, and the person opens it in
+    // api-refactor's glimt; then that glimt's share is gone.
+    relisted.current = LISTED
+    await clock.advance(5_000)
+    store.set('agents:a15af547-full', { at: 3_605_000, agents: [], seen: { '1879e383-full': 3_607_000 } })
+    await clock.advance(5_000)
+    expect(await isBold()).toBe(false)
+    store.delete('agents:a15af547-full')
+    await clock.advance(5_000)
+    expect(await isBold()).toBe(false)
+  })
+
+  test('a session stopped with x is no news: its name stays plain', async ($, on) => {
+    const relisted = { current: undefined as unknown }
+    await machine($, on, { relisted })
+    const ui = await onSession($, 1)
+    const isBold = async () => (await ui.findAll({ type: 'Text' })).find(text => text.text === 'release-notes')?.props.bold === true
+
+    await ui.press({ key: 'key-stop' })
+    relisted.current = LISTED.map(s => (s.sessionId === 'd3d04fc1-full' ? { ...s, state: 'stopped' } : s))
+    await ui.press({ key: 'stop-yes' })
+    expect(await textOf(ui, 'session-d3d04fc1-full')).toBe('▸ ■ release-notes stopped · <1m')
+    expect(await isBold()).toBe(false)
+  })
+
+  test('within a state, sorts the sessions by when they started, whatever order claude agents prints', async ($, on) => {
+    const later = { pid: 3, cwd: '/tmp/later', kind: 'interactive', startedAt: 120_000, sessionId: 'later-full', name: 'later', status: 'idle' }
+    await machine($, on, { listed: [later, ...LISTED] })
+    const ui = await mount($)
+
+    expect(await sessionOrder(ui)).toEqual(['session-d3d04fc1-full', 'session-a15af547-full', 'session-1879e383-full', 'session-later-full'])
   })
 
   test('before anything has happened, says in one line what will show', async ($, on) => {
@@ -207,17 +267,32 @@ describe('sessions', () => {
     expect(await textOf(ui, 'sessions-more')).toBe('+2 more')
   })
 
-  test('folds an idle session in bold too, one never opened in glimt', async ($, on) => {
+  test('keeps an idle session in bold out of the fold: it keeps its row', async ($, on) => {
     const relisted = { current: undefined as unknown }
-    const { clock } = await machine($, on, { listed: [...DOCS_BUSY, idleSession('idler')], relisted })
+    const quiet = [idleSession('idler'), idleSession('lazy')]
+    const { clock } = await machine($, on, { listed: [...DOCS_BUSY, ...quiet], relisted })
+    // 20 rows give the sessions 5: the heading and four lines, for five sessions.
+    const ui = await mount($, { rows: 20 })
+
+    // docs-site stops: bold until the person reacts.
+    relisted.current = [...LISTED, ...quiet]
+    await clock.advance(5_000)
+    expect(await sessionOrder(ui)).toEqual(['session-d3d04fc1-full', 'session-a15af547-full', 'session-1879e383-full'])
+    expect(await textOf(ui, 'sessions-idle')).toBe('  ○ 2 idle')
+  })
+
+  test('short of room, "+N more" takes the working rows before one in bold', async ($, on) => {
+    const builder = { pid: 2, cwd: '/tmp/builder', kind: 'interactive', startedAt: 0, sessionId: 'builder-full', name: 'builder', status: 'busy' }
+    const relisted = { current: undefined as unknown }
+    const { clock } = await machine($, on, { listed: [...DOCS_BUSY, builder], relisted })
     // 16 rows give the sessions 4: the heading and three lines, for four sessions.
     const ui = await mount($, { rows: 16 })
 
-    // docs-site stops: bold until opened.
-    relisted.current = [...LISTED, idleSession('idler')]
+    // docs-site stops: bold, and last in the order.
+    relisted.current = [...LISTED, builder]
     await clock.advance(5_000)
-    expect(await sessionOrder(ui)).toEqual(['session-d3d04fc1-full', 'session-a15af547-full'])
-    expect(await textOf(ui, 'sessions-idle')).toBe('  ○ 2 idle')
+    expect(await sessionOrder(ui)).toEqual(['session-d3d04fc1-full', 'session-1879e383-full'])
+    expect(await textOf(ui, 'sessions-more')).toBe('+2 more')
   })
 
   test('reads the list at start and every 5 seconds while the pane is drawn', async ($, on) => {

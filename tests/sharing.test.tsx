@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'claude-code/testing'
-import { create, loops, mount, setStatus, spawn, taskTools, textOf } from './kit'
+import { ask, create, loops, mount, moveTo, promptBox, prompts, setStatus, spawn, taskTools, textOf, typeInPrompt } from './kit'
 import { LISTED, machine, sessionOrder } from './machine'
 
 describe('sharing between sessions', () => {
@@ -89,5 +89,73 @@ describe('sharing between sessions', () => {
     await $.classic.SessionStart({ source: 'clear' })
     expect(await textOf(ui, 'self')).toBe('▸ After clear  this session')
     expect(await sessionOrder(ui)).toEqual(['session-d3d04fc1-full', 'session-a15af547-full', 'session-1879e383-full'])
+  })
+
+  // What this session's share says of the person's reactions.
+  const seenShared = (store: Map<string, unknown>) => {
+    const share = store.get('agents:self-full')
+    return typeof share === 'object' && share !== null && 'seen' in share ? share.seen : undefined
+  }
+
+  test('shares when its person last typed in the prompt box, and never what', async ($, on) => {
+    promptBox(on)
+    const { clock, store } = await machine($, on)
+
+    await clock.advance(1_000)
+    await typeInPrompt($, 'deploy to', ' prod')
+    await clock.advance(4_000)
+    expect(store.get('agents:self-full')).toEqual({ at: 3_605_000, agents: [], watching: true, seen: { 'self-full': 3_601_000 } })
+  })
+
+  test('shares when its person last sent a prompt, a slash command too, and not when a task notification came in', async ($, on) => {
+    prompts(on)
+    const { clock, store } = await machine($, on)
+
+    await clock.advance(1_000)
+    await ask($, '/compact')
+    await clock.advance(1_000)
+    await ask($, 'agent a1 finished', 'task-notification')
+    await clock.advance(3_000)
+    expect(seenShared(store)).toEqual({ 'self-full': 3_601_000 })
+  })
+
+  test('shares when its person last pressed in its pane', async ($, on) => {
+    const { clock, store } = await machine($, on)
+    const ui = await mount($)
+
+    await clock.advance(3_000)
+    await ui.press({ key: 'toggle-self' })
+    await clock.advance(2_000)
+    expect(seenShared(store)).toEqual({ 'self-full': 3_603_000 })
+  })
+
+  test('shares when its person last moved in its pane', async ($, on) => {
+    const { clock, store } = await machine($, on)
+    await mount($, { isFocused: true })
+
+    await clock.advance(2_000)
+    await moveTo($, 'toggle-self')
+    await clock.advance(3_000)
+    expect(seenShared(store)).toEqual({ 'self-full': 3_602_000 })
+  })
+
+  test("passes on what another glimt shared of the person's reactions, for listed sessions only", async ($, on) => {
+    const { clock, store } = await machine($, on, {
+      stored: { 'agents:a15af547-full': { at: 3_600_000, agents: [], seen: { '1879e383-full': 3_590_000, 'gone-full': 3_580_000 } } },
+    })
+    await mount($)
+
+    await clock.advance(5_000)
+    expect(seenShared(store)).toEqual({ '1879e383-full': 3_590_000 })
+  })
+
+  test('shares a session opened here', async ($, on) => {
+    const { clock, store } = await machine($, on)
+    const ui = await mount($)
+
+    await clock.advance(1_000)
+    await ui.press({ key: 'toggle-session-1879e383-full' })
+    await clock.advance(4_000)
+    expect(seenShared(store)).toEqual({ 'self-full': 3_601_000, '1879e383-full': 3_601_000 })
   })
 })

@@ -49,7 +49,7 @@ A spinner marks whatever is working right now: a running agent, a working sessio
 
 Under this session's name, a status row speaks up only when something is out of the ordinary: `bypass permissions` in amber while the main conversation runs in that mode; a plan limit from 80% used, at full weight from 95%, the fullest first with when it resets, as in `5h limit 95% · resets in 1h12m`; and `same folder` when another session runs in this session's folder. Otherwise it isn't there. Open the row for the folder, the model and its effort.
 
-A waiting session says what it wants: `approve` for a permission prompt, `answer` for a question. A background session that ended says `done`, `failed` or `stopped`. Each other session shows how long it has been in its state, counted from when glimt saw that state begin, and its name turns bold when it stops or ends, until you open it. A session you never renamed goes by the title Claude Code gave it, as in its resume list. A row says `same folder` when another session runs in the same folder. Where another session runs glimt, its row also shows how far its plan has come, as in `3/7`, `bypass` in amber while it runs in bypass permissions, and its context from 80% full. Going into a session names its permission mode.
+A waiting session says what it wants: `approve` for a permission prompt, `answer` for a question. A background session that ended says `done`, `failed` or `stopped`. Each other session shows how long it has been in its state, counted from when glimt saw that state begin, and its name turns bold when it stops or ends, until you react to it: open it in glimt (in any session's pane), type or send a prompt in its own terminal, or press in its glimt pane there. Stopping it with `x` counts too. Sessions are listed waiting first, then working, then failed or stopped, then done or idle, each group by when the sessions started, so a row moves only when its state changes. Short of room, idle sessions you have seen fold into one line (`○ 2 idle`), and `+N more` gives up working rows and rows you have seen before one that waits or is in bold. A session you never renamed goes by the title Claude Code gave it, as in its resume list. A row says `same folder` when another session runs in the same folder. Where another session runs glimt, its row also shows how far its plan has come, as in `3/7`, `bypass` in amber while it runs in bypass permissions, and its context from 80% full. Going into a session names its permission mode.
 
 ## Settings
 
@@ -73,6 +73,7 @@ Mods run with your permissions, so here is everything glimt touches. `claude plu
 
 - This session's tool calls, tasks, subagents and turns, through the mod API, and the messages of one of its agents while you are inside it.
 - This session's permission mode, from the hook events that carry it, and its plan limits, from Claude Code's usage measurements.
+- When you type in this session's prompt box, send a prompt or press in its pane: only when, never what you type, so the other sessions' glimts can take the bold off its name.
 - Claude Code's own list of this session's agents (`$.agent.list`), every 5 seconds while glimt shows one as running, so an agent whose end it missed doesn't stay running.
 - The sessions on this machine and their state, from `claude agents --json`, every 5 seconds while the pane is drawn.
 - Each listed session's transcript under `~/.claude/projects/`, for the title Claude Code gave it: once, whether the session was ever renamed, and while it never was, the transcript's last 64 KiB every 30 seconds while the pane is drawn.
@@ -90,7 +91,7 @@ Mods run with your permissions, so here is everything glimt touches. `claude plu
 ### What it writes
 
 - A message you type with `m`, as typed, to the agent or session you are inside, through Claude Code.
-- Claude Code's plugin store, which only glimt in the other sessions on this machine reads: this session's running agents (type, description, task, start time, the tool each runs and how many it has run, and the tool one waits on you to allow), how far its plan has come, its permission mode, how full its context is, and names asked of other sessions.
+- Claude Code's plugin store, which only glimt in the other sessions on this machine reads: this session's running agents (type, description, task, start time, the tool each runs and how many it has run, and the tool one waits on you to allow), how far its plan has come, its permission mode, how full its context is, when you last reacted to each session on this machine (as above, or by opening it in glimt), and names asked of other sessions.
 - When a background session starts waiting for you, finishes or fails, one notification through `$.ui.notify`, Claude Code's own call (2.1.295), and your notification setting; a toast where your terminal shows none; nothing if you turned notifications off in Claude Code or glimt's Notifications option is off. A session in a terminal of its own notifies from there when it waits.
 - `claude attach <id>` to your clipboard when you press `a`.
 
@@ -112,7 +113,7 @@ It can't switch this terminal to another session: Claude Code offers mods no way
 
 glimt collects no data about you and sends nothing anywhere. It runs only on your machine, makes no network requests, and has no service or telemetry of its own. It writes no files.
 
-What it reads, it reads to draw the pane, as listed under [How it works](#how-it-works). What it keeps between sessions sits in Claude Code's plugin store on your machine: each session's running agents, with up to 400 characters of each agent's task and the tool one waits on you to allow, how far its plan has come, its permission mode and how full its context is, and names one session asks another to take. A session's entry is deleted when the session ends or stops running, an entry not refreshed for a minute is ignored, and a name is deleted once taken.
+What it reads, it reads to draw the pane, as listed under [How it works](#how-it-works). What it keeps between sessions sits in Claude Code's plugin store on your machine: each session's running agents, with up to 400 characters of each agent's task and the tool one waits on you to allow, how far its plan has come, its permission mode and how full its context is, when you last reacted to each listed session (a time, never what you typed), and names one session asks another to take. A session's entry is deleted when the session ends or stops running, an entry not refreshed for a minute is ignored, and a name is deleted once taken.
 
 An agent or a session you start from glimt, and a message you send with `m`, goes to Claude through Claude Code like anything you type yourself, under [Anthropic's privacy policy](https://www.anthropic.com/legal/privacy).
 
