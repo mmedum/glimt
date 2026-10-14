@@ -152,6 +152,9 @@ export type Drill = {
     stop: () => void
     answer: (isYes: boolean) => void
     help: () => void
+    down: () => void
+    up: () => void
+    close: () => void
   }
 }
 
@@ -160,7 +163,7 @@ export const FEED_INLINE = 20
 
 // What l went into, alone in the pane as Claude Code's agent view shows a
 // session: the way back, the agent or the session with what it does now, a
-// session's agents (j, k, o and l work on them), an agent's task, its latest
+// session's agents (j, k, Enter and l work on them), an agent's task, its latest
 // activity (newest last, as much as the rows left hold), a field for a
 // message to it, and the keys while the pane holds the keyboard.
 export function drillSection(view: View, drill: Drill) {
@@ -227,8 +230,9 @@ export function drillSection(view: View, drill: Drill) {
   const canStopAgent = into.kind === 'agent' && agent !== undefined && isStoppable(agent)
   const canRename = into.kind === 'session' && session !== undefined && drill.isSharing
   // The keys, as the overview binds them: l on one of a session's agents,
-  // then what the pane is in allows; h sits on the way back above. Each
-  // with the cells it takes, to count the rows the row wraps to.
+  // then what the pane is in allows, j and k while there are agents to move
+  // over, and q; h sits on the way back above. Each with the cells it
+  // takes, to count the rows the row wraps to.
   const keyItems = drill.isFocused
     ? [
         ...(canInto ? [{ width: keyWidth('into'), node: keyButton(view, 'into', 'l', 'into', act.into) }] : []),
@@ -242,6 +246,13 @@ export function drillSection(view: View, drill: Drill) {
           : []),
         ...(canStopAgent ? [{ width: keyWidth('stop'), node: keyButton(view, 'stop', 'x', 'stop', act.stop) }] : []),
         { width: keyWidth('keys'), node: keyButton(view, 'help', 'i', 'keys', act.help) },
+        ...((crew?.toggles.length ?? 0) > 0
+          ? [
+              { width: keyWidth('down'), node: keyButton(view, 'down', 'j', 'down', act.down) },
+              { width: keyWidth('up'), node: keyButton(view, 'up', 'k', 'up', act.up) },
+            ]
+          : []),
+        { width: keyWidth('close'), node: keyButton(view, 'close', 'q', 'close', act.close) },
       ]
     : undefined
   const keyRows =

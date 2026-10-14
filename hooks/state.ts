@@ -7,7 +7,8 @@ export const PANE = 'glimt'
 export type Toggle = { key: string; target: string }
 
 // The values glimt's modules share as they run: the toggles in the order
-// last drawn (for j and k), whether the pane held the keyboard when last
+// last drawn (for j and k) and whether Claude Code's focus ring is off
+// them, on the way back, a key or a field, whether the pane held the keyboard when last
 // drawn and whether it gave it up since the clock last looked, the home
 // folder and Claude Code's own folder,
 // whether anything runs (so the clock knows to move) and how many frames
@@ -17,6 +18,7 @@ export type Toggle = { key: string; target: string }
 // which then stays closed, /clear included, until they open it again.
 export const runtime = {
   toggles: [] as Toggle[],
+  isOffRows: false,
   isFocused: false,
   hasLostKeyboard: false,
   home: '',

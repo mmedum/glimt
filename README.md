@@ -23,16 +23,18 @@ Its icon says what it does: a calm board of everything at a glance; one lamp lig
 
 Needs Claude Code 2.1.289 or later in a terminal (2.1.295 for desktop notifications); tested with 2.1.295. Mods don't draw in the VS Code panel or with `-p`.
 
-The pane opens by itself when the terminal is at least 144 columns wide. `/glimt` opens it at any width, with the keyboard, and closes it again. A pane you close stays closed, also after `/clear`, until you open it.
+The pane opens by itself when the terminal is at least 144 columns wide. `/glimt` opens it at any width, with the keyboard; with the pane open, behind another tab or with the keyboard in the prompt box, it gives the pane the keyboard again, on the row you left. `q` closes it. A pane you close stays closed, also after `/clear`, until you open it.
 
 Third-party marketplaces don't update on their own. To update, run `claude plugin update glimt@glimt` and restart Claude Code. To remove glimt, run `claude plugin uninstall glimt@glimt`.
 
 ## Keys
 
-The keys work while the pane holds the keyboard: open it with `/glimt`, click it, or press ctrl+x tab. As in Neovim's side panels, glimt binds only its own actions and leaves moving to Claude Code: ↑ ↓ and Tab move between rows, Enter opens or closes the row (a step's description, an agent's task, a session's agents), and Esc gives the keyboard back to the prompt. The key row shows only what the selected row allows; `i` lists every key. While the keyboard is at the prompt or in one of glimt's forms, the row you left stays marked by a quiet band across the pane, as in a Neovim side panel: by default the theme's `userMessageBackground`, or the Cursor band color option. Closing the pane forgets the row, and it opens again on the overview.
+The keys work while the pane holds the keyboard: open it with `/glimt`, click it, or press ctrl+x tab. `j` and `k` move down and up the rows, while ↑ ↓ and Tab also stop on the keys, the way back and the fields; `l` goes in and `h` back out; Enter opens or closes the row (a step's description, an agent's task, a session's agents); Esc gives the keyboard back to the prompt; `q` closes the pane. The key row shows only what the selected row allows; `i` lists every key. While the keyboard is at the prompt or in one of glimt's forms, the row you left stays marked by a quiet band across the pane, as in a Neovim side panel: by default the theme's `userMessageBackground`, or the Cursor band color option. Closing the pane forgets the row, and it opens again on the overview.
 
 | Key | Does                                                                     |
 | --- | ------------------------------------------------------------------------ |
+| `j` | the next row; from a key or the way back, the first                      |
+| `k` | the row before; from a key or the way back, the last                     |
 | `l` | go into an agent or a session: its task, model, branch and live activity |
 | `h` | back out, one level at a time, from the line that names where it goes    |
 | `n` | new agent here                                                           |
@@ -43,7 +45,7 @@ The keys work while the pane holds the keyboard: open it with `/glimt`, click it
 | `a` | copy a background session's `claude attach` command                      |
 | `x` | stop a background session or agent, after asking                         |
 | `i` | all keys                                                                 |
-| `q` | close the pane, from the `i` list                                        |
+| `q` | close the pane                                                           |
 
 A spinner marks whatever is working right now: a running agent, a working session, the step in progress while Claude is on it. The rest keep still marks: `◉` waiting for you, `○` idle, `✓` done, `✗` failed, `■` stopped.
 
@@ -99,7 +101,7 @@ Mods run with your permissions, so here is everything glimt touches. `claude plu
 
 - The system prompt: while Claude has the task tools, one sentence asking it to file sub-steps under their step (`metadata.parent`).
 - The chat, while the pane is open: task-list rows are left out, and a running agent's row is kept to one line.
-- `/glimt`, its own command, opens and closes the pane.
+- `/glimt`, its own command, opens the pane or gives it the keyboard.
 
 Its hook on Claude Code's permission request only notes which agent is being asked and about which call (the tool, and the command, path or address it is on), and hands the request on unchanged: glimt never answers a permission. Its other hooks (tool calls, turns, agents, prompts, the hook events that carry the permission mode, usage measurements, session start and end, focus) only read what passes, to keep the pane current, and pass it on unchanged.
 

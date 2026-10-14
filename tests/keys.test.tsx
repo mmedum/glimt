@@ -21,6 +21,8 @@ import {
 } from './kit'
 import type { Mounted, PaneSize } from './kit'
 import { AGENTS_MACHINE, machine } from './machine'
+import { landingOf } from '../hooks/keys'
+import type { Landing } from '../hooks/keys'
 
 describe('keys', () => {
   // A pane with two steps and an agent, focused; `highlighted` reads what
@@ -39,7 +41,7 @@ describe('keys', () => {
     return { ui, highlighted }
   }
 
-  test("shows only what the cursor's row allows, then n and i, while the pane holds the keyboard", async ($, on) => {
+  test("shows only what the cursor's row allows, then n and i, j and k, and q, while the pane holds the keyboard", async ($, on) => {
     mock.clock(on)
     focusRing(on)
     loops(on)
@@ -51,12 +53,12 @@ describe('keys', () => {
     const focused = await mount($, { isFocused: true })
     const hotkeys = async () =>
       (await focused.findAll({ type: 'Button' })).filter(button => button.key?.startsWith('key-') === true).map(button => button.props.hotkey)
-    expect(await hotkeys()).toEqual(['n', 'i'])
+    expect(await hotkeys()).toEqual(['n', 'i', 'j', 'k', 'q'])
     // On this session's row, c clears it; on an agent, l goes into it.
     await moveTo($, 'toggle-self')
-    expect(await hotkeys()).toEqual(['c', 'n', 'i'])
+    expect(await hotkeys()).toEqual(['c', 'n', 'i', 'j', 'k', 'q'])
     await moveTo($, 'toggle-agent-a1')
-    expect(await hotkeys()).toEqual(['l', 'n', 'i'])
+    expect(await hotkeys()).toEqual(['l', 'n', 'i', 'j', 'k', 'q'])
   })
 
   test('a key row that wraps takes its rows from the plan; one that just fits takes one', async ($, on) => {
@@ -67,18 +69,18 @@ describe('keys', () => {
       await create($, subject)
     }
 
-    // On this session's row the keys take 27 cells (c: clear, n: new, i:
-    // keys). At 26 columns they wrap to two rows: 19 rows less this session,
-    // Now, the plan's heading, Agents, Sessions, the blanks and the three of
-    // the key row leave the plan 4, for 5 steps.
-    const wrapped = await mount($, { columns: 26, rows: 19, isFocused: true })
+    // On this session's row the keys take 56 cells (c: clear, n: new, i:
+    // keys, j: down, k: up, q: close). At 55 columns they wrap to two rows:
+    // 19 rows less this session, Now, the plan's heading, Agents, Sessions,
+    // the blanks and the three of the key row leave the plan 4, for 5 steps.
+    const wrapped = await mount($, { columns: 55, rows: 19, isFocused: true })
     await moveTo($, 'toggle-self')
     expect(await stepOrder(wrapped)).toEqual(['step-1', 'step-2', 'step-3'])
     expect(await textOf(wrapped, 'more')).toBe('  ☐ 2 more')
     await wrapped.unmount()
 
-    // At 27 they just fit on one row, and the plan has 5.
-    const fitting = await mount($, { columns: 27, rows: 19, isFocused: true })
+    // At 56 they just fit on one row, and the plan has 5.
+    const fitting = await mount($, { columns: 56, rows: 19, isFocused: true })
     expect(await stepOrder(fitting)).toEqual(['step-1', 'step-2', 'step-3', 'step-4', 'step-5'])
   })
 
@@ -163,6 +165,57 @@ describe('keys', () => {
     expect(await highlighted()).toEqual(['two'])
   })
 
+  test('j and k move the cursor down and up the rows, and it stays at the first and the last', async ($, on) => {
+    const { ui, highlighted } = await focusedPane($, on)
+
+    await ui.press({ key: 'key-down' })
+    expect(await highlighted()).toEqual(['this session'])
+    await ui.press({ key: 'key-up' })
+    expect(await highlighted()).toEqual(['this session'])
+    await ui.press({ key: 'key-down' })
+    await ui.press({ key: 'key-down' })
+    expect(await highlighted()).toEqual(['two'])
+    await ui.press({ key: 'key-down' })
+    await ui.press({ key: 'key-down' })
+    expect(await highlighted()).toEqual(['Explore helper'])
+    await ui.press({ key: 'key-up' })
+    expect(await highlighted()).toEqual(['two'])
+  })
+
+  test('from off the rows, on a key, j goes to the first row and k to the last, wherever the cursor was', async ($, on) => {
+    const { ui, highlighted } = await focusedPane($, on)
+    await ui.press({ key: 'key-down' })
+    await ui.press({ key: 'key-down' })
+    await ui.press({ key: 'key-down' })
+    expect(await highlighted()).toEqual(['two'])
+
+    await moveTo($, 'key-help')
+    await ui.press({ key: 'key-down' })
+    expect(await highlighted()).toEqual(['this session'])
+    await moveTo($, 'key-help')
+    await ui.press({ key: 'key-up' })
+    expect(await highlighted()).toEqual(['Explore helper'])
+  })
+
+  test('with no row under the cursor yet, k goes to the last row', async ($, on) => {
+    const { ui, highlighted } = await focusedPane($, on)
+
+    await ui.press({ key: 'key-up' })
+    expect(await highlighted()).toEqual(['Explore helper'])
+  })
+
+  test('q in the key row closes the pane', async ($, on) => {
+    const closed: unknown[] = []
+    on('ui.close', (_$, e) => {
+      closed.push(e.id)
+      return { value: undefined }
+    })
+    const { ui } = await focusedPane($, on)
+
+    await ui.press({ key: 'key-close' })
+    expect(closed).toEqual(['glimt'])
+  })
+
   test('q in the key list closes the pane', async ($, on) => {
     const closed: unknown[] = []
     on('ui.close', (_$, e) => {
@@ -196,7 +249,7 @@ describe('keys', () => {
   // Claude Code's record of glimt's pane, as $.ui.panes lists it.
   const glimtPane = (isShown: boolean) => [{ id: 'glimt', title: 'glimt', isShown, isFocused: false, isPlaced: true }]
 
-  test('/glimt closes the pane when it is the one shown', async ($, on) => {
+  test('/glimt gives the pane shown the keyboard rather than closing it', async ($, on) => {
     mock.clock(on)
     const closed: unknown[] = []
     on('ui.close', (_$, e) => {
@@ -208,8 +261,8 @@ describe('keys', () => {
     await startSession($, on, { askedFocus })
     await $.command.run({ command: 'glimt', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 120 } })
 
-    expect(closed).toEqual(['glimt'])
-    expect(askedFocus).toEqual([false])
+    expect(closed).toEqual([])
+    expect(askedFocus).toEqual([false, true])
   })
 
   test('/glimt brings the pane to the front with the keyboard when another pane is shown over it', async ($, on) => {
@@ -561,5 +614,31 @@ describe('drill-in', () => {
     await finish($, 'a1')
     await ask($, 'Next thing')
     expect(await textOf(ui, 'drill-title')).toBe('This agent is no longer listed.')
+  })
+})
+
+// Claude Code's kit can't follow glimt's own focus moves, so where /glimt
+// lands is checked here, and live.
+describe('/glimt lands', () => {
+  const at: Landing = { hasForm: false, hasKeyList: false, cursor: 'toggle-2', rows: ['toggle-self', 'toggle-2'], isInside: false }
+
+  test('on the row the cursor was on', () => {
+    expect(landingOf(at)).toEqual({ key: 'toggle-2', isRow: true })
+  })
+
+  test("in a form's field left open, before the row", () => {
+    expect(landingOf({ ...at, hasForm: true })).toEqual({ key: 'composer-field', isRow: false })
+  })
+
+  test("on the key list's way back while it shows", () => {
+    expect(landingOf({ ...at, hasKeyList: true })).toEqual({ key: 'key-help', isRow: false })
+  })
+
+  test('inside an agent or a session, on the way back when the cursor is on no row drawn there', () => {
+    expect(landingOf({ ...at, rows: ['toggle-remote-a'], isInside: true })).toEqual({ key: 'back', isRow: false })
+  })
+
+  test('nowhere on the overview when the cursor is on no row drawn', () => {
+    expect(landingOf({ ...at, cursor: null })).toBeNull()
   })
 })

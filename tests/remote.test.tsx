@@ -52,6 +52,38 @@ describe("other sessions' agents", () => {
     expect(await highlighted()).toEqual(['docs-site'])
   })
 
+  test('inside a session, j and k walk its agents; inside an agent there is nothing to walk, and q still closes', async ($, on) => {
+    const closed: unknown[] = []
+    on('ui.close', (_$, e) => {
+      closed.push(e.id)
+      return { value: undefined }
+    })
+    await machine($, on, AGENTS_MACHINE)
+    const ui = await onSession($, 3)
+    const highlighted = async () => (await ui.findAll({ type: 'Text' })).filter(text => text.props.inverse === true).map(text => text.text)
+
+    await ui.press({ key: 'key-into' })
+    await ui.press({ key: 'key-down' })
+    expect(await highlighted()).toEqual(['Explore find loaders'])
+    await ui.press({ key: 'key-down' })
+    expect(await highlighted()).toEqual(['Plan plan the move'])
+    await ui.press({ key: 'key-up' })
+    await ui.press({ key: 'key-up' })
+    expect(await highlighted()).toEqual(['Explore find loaders'])
+
+    // Up onto the way back, j starts again from the first agent.
+    await ui.press({ key: 'key-down' })
+    await moveTo($, 'back')
+    await ui.press({ key: 'key-down' })
+    expect(await highlighted()).toEqual(['Explore find loaders'])
+
+    await ui.press({ key: 'key-into' })
+    expect(await ui.find({ key: 'key-down' })).toBeUndefined()
+    expect(await ui.find({ key: 'key-up' })).toBeUndefined()
+    await ui.press({ key: 'key-close' })
+    expect(closed).toEqual(['glimt'])
+  })
+
   test("a session's glimt share marks its running agents and counts them on its row", async ($, on) => {
     const share = {
       at: 3_600_000,

@@ -9,7 +9,7 @@ import type { Part } from './text'
 import { cursorStyle, keyButton, keyWidth, partsNode, wrappedRows } from './view'
 import type { View } from './view'
 
-export type Keys = Record<'into' | 'spawn' | 'help' | 'rename' | 'clear' | 'attach' | 'stop', () => void>
+export type Keys = Record<'into' | 'spawn' | 'help' | 'rename' | 'clear' | 'attach' | 'stop' | 'down' | 'up' | 'close', () => void>
 
 // What the cursor is on allows: l on an agent or a session, c on this
 // session, r on this session or one whose glimt shares, a and x on a
@@ -17,11 +17,11 @@ export type Keys = Record<'into' | 'spawn' | 'help' | 'rename' | 'clear' | 'atta
 // background.
 export type KeyContext = { canInto: boolean; canClear: boolean; canRename: boolean; canReach: boolean; canStop: boolean }
 
-// The keys while the pane holds the keyboard, as Neovim's side panels bind
-// them: only glimt's own actions, those the cursor's row allows, then n and
-// i. Moving and opening are Claude Code's (Up, Down and Tab move, Enter
-// opens or closes the row, Esc hands the keyboard back), as j, k and Enter
-// are Neovim's. A key works only while drawn, so s and q live in the list.
+// The keys while the pane holds the keyboard: glimt's own actions, those
+// the cursor's row allows, then n and i, then j and k to move and q to
+// close, as every pane of the series binds them. Claude Code's own keys
+// work too: Up, Down and Tab move, Enter opens or closes the row, Esc hands
+// the keyboard back. A key works only while drawn, so s lives in the list.
 export function keySection(view: View, can: KeyContext, keys: Keys) {
   const { Box } = view.ui
   const key = (name: string, hotkey: string, label: string, press: () => void) => keyButton(view, name, hotkey, label, press)
@@ -33,6 +33,9 @@ export function keySection(view: View, can: KeyContext, keys: Keys) {
     (can.canReach || can.canStop) && 'stop',
     'new',
     'keys',
+    'down',
+    'up',
+    'close',
   ].filter((label): label is string => label !== false)
 
   return {
@@ -46,15 +49,39 @@ export function keySection(view: View, can: KeyContext, keys: Keys) {
         {(can.canReach || can.canStop) && key('stop', 'x', 'stop', keys.stop)}
         {key('spawn', 'n', 'new', keys.spawn)}
         {key('help', 'i', 'keys', keys.help)}
+        {key('down', 'j', 'down', keys.down)}
+        {key('up', 'k', 'up', keys.up)}
+        {key('close', 'q', 'close', keys.close)}
       </Box>
     ),
   }
+}
+
+// Where /glimt puts Claude Code's focus ring as it gives the pane the
+// keyboard: in a form's field left open, on the key list's way back while
+// it shows, on the row the cursor was on while that row is drawn, or inside
+// an agent or a session on the way back, as l puts it; never on the message
+// field. None leaves the ring where opening the pane put it.
+export type Landing = { hasForm: boolean; hasKeyList: boolean; cursor: string | null; rows: readonly string[]; isInside: boolean }
+
+export function landingOf(at: Landing): { key: string; isRow: boolean } | null {
+  if (at.hasForm) {
+    return { key: 'composer-field', isRow: false }
+  }
+  if (at.hasKeyList) {
+    return { key: 'key-help', isRow: false }
+  }
+  if (at.cursor !== null && at.rows.includes(at.cursor)) {
+    return { key: at.cursor, isRow: true }
+  }
+  return at.isInside ? { key: 'back', isRow: false } : null
 }
 
 // What each key does, for the list i opens; the keys that start something or
 // close the pane are pressable there.
 export const KEY_LIST: readonly (readonly [string, string])[] = [
   ['↑ ↓', 'move between rows, as Tab does'],
+  ['j k', 'down and up the rows alone; from a key, the first or last row'],
   ['Enter', 'open or close the row'],
   ['l', 'go into an agent or a session'],
   ['h', 'back out'],

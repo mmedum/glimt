@@ -24,7 +24,7 @@ import type {
 import { agentSection, askCall, askingOf, contextTokens, isStoppable, isTurnRunning, mainAgent, settled, withCalls } from './agents'
 import type { Spawned } from './agents'
 import { FEED_KEPT, TAIL_BYTES, callLine, drillSection, isShownText, lastModel, parseTranscript, titleOf } from './drill'
-import { FORM_ROWS, composerSection, helpSection, keySection, selfSection } from './keys'
+import { FORM_ROWS, composerSection, helpSection, keySection, landingOf, selfSection } from './keys'
 import { colorOf } from './paint'
 import { applyUpdate, nowSection, parentFrom, planLines, planSection, planTitle, planUnits, rowCount } from './plan'
 import type { StepUpdate } from './plan'
@@ -165,14 +165,20 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // /glimt closes the pane when it is the one shown, else opens it with the
-  // keyboard, as Neovim's side panels toggle.
+  // /glimt gives the pane the keyboard: it opens it, brings it to the front
+  // of the dock, or takes the keyboard back from the prompt, the ring where
+  // the person left off (see landingOf). q closes the pane.
   on('command.run', { command: 'glimt' }, async $ => {
-    const pane = (await $.ui.panes().catch(() => [])).find(one => one.id === PANE)
-    if (pane?.isShown === true && pane.isPlaced) {
-      await closePane($)
-    } else {
-      await openPane($, true)
+    await openPane($, true)
+    const to = landingOf({
+      hasForm: (await read($, composer)) !== null,
+      hasKeyList: await read($, help),
+      cursor: await read($, cursor),
+      rows: runtime.toggles.map(one => one.key),
+      isInside: (await read($, opened)).length > 0,
+    })
+    if (to !== null) {
+      await ringOn($, to.key, to.isRow)
     }
 
     return {}
@@ -198,14 +204,23 @@ export const register: Register = (on, options) => {
     if (e.requestId === PANE && e.origin.kind === 'person') {
       await touch($)
     }
-    if (e.requestId === PANE && key !== undefined && runtime.toggles.some(one => one.key === key)) {
-      await update($, cursor, () => key)
+    if (e.requestId === PANE && key !== undefined) {
+      runtime.isOffRows = !runtime.toggles.some(one => one.key === key)
+      if (!runtime.isOffRows) {
+        await update($, cursor, () => key)
+      }
     }
-    if (e.requestId === PANE && e.origin.kind === 'person' && key !== 'composer-field' && (await read($, composer)) !== null) {
+    const isLeavingForm = e.requestId === PANE && e.origin.kind === 'person' && key !== 'composer-field' && (await read($, composer)) !== null
+    if (isLeavingForm) {
       await update($, composer, () => null)
     }
 
-    return next(e)
+    const answered = await next(e)
+    // Tab onto the form's own cancel: the button goes with the form.
+    if (isLeavingForm && key === 'composer-cancel') {
+      await ringBack($)
+    }
+    return answered
   })
 
   // Whether Claude has a task list depends on the model; the plan says so
@@ -615,6 +630,9 @@ export const register: Register = (on, options) => {
             clear: () => void update($, clearing, () => true),
             attach: () => void attachSession($),
             stop: () => void askStop($),
+            down: () => void moveBy($, 1),
+            up: () => void moveBy($, -1),
+            close: () => void closePane($),
           },
         )
       : undefined
@@ -638,7 +656,7 @@ export const register: Register = (on, options) => {
         : composerSection(view, form, listed ?? [], {
             spawn: (task, where) => void spawnAgent($, task, where),
             rename: (sessionId, name) => void renameSession($, sessionId, name),
-            cancel: () => void update($, composer, () => null),
+            cancel: () => void update($, composer, () => null).then(() => ringBack($)),
           })
 
     // The sections stack from the top, each in a place that never moves: this
@@ -698,13 +716,16 @@ export const register: Register = (on, options) => {
         act: {
           back: () => void goBack($),
           into: () => void goInto($),
-          message: () => void $.ui.focus({ requestId: PANE, key: 'message-field' }).catch(() => undefined),
+          message: () => void ringOn($, 'message-field', false),
           send: (to, name, text) => void sendFromField($, to, name, text),
           rename: () => void (into.kind === 'session' ? openComposer($, { kind: 'rename', sessionId: into.sessionId }) : undefined),
           attach: () => void attachSession($),
           stop: () => void askStop($),
           answer: isYes => void answerStop($, isYes),
           help: () => void update($, help, () => true),
+          down: () => void moveBy($, 1),
+          up: () => void moveBy($, -1),
+          close: () => void closePane($),
         },
       })
       runtime.toggles = drill.toggles
@@ -844,7 +865,7 @@ async function openPane($: EngineInterface, isAsked = false) {
   await update($, isShown, () => shown.isPlaced)
 }
 
-// q and /glimt close the pane with glimt's own close, which passes no
+// q closes the pane with glimt's own close, which passes no
 // ui.close hook of glimt's; refused, the pane stays as it was, the key list
 // too.
 async function closePane($: EngineInterface) {
@@ -854,7 +875,7 @@ async function closePane($: EngineInterface) {
   )
 }
 
-// The pane closed, by its close mark, ctrl+x x, q or /glimt: it stays closed
+// The pane closed, by its close mark, ctrl+x x or q: it stays closed
 // until the person opens it again, the chat shows all of itself again, and
 // the pane forgets its cursor, the agent or session it was in, a form left
 // open, the key list, and a clear or a stop waiting for y or n. Opened again,
@@ -956,7 +977,7 @@ async function goInto($: EngineInterface) {
   // the same place among the pane's elements, which can be the message field:
   // the keys the key row shows would be typed there. The ring goes onto the
   // way back instead, as h puts it back on the row it came from.
-  await $.ui.focus({ requestId: PANE, key: 'back' }).catch(() => undefined)
+  await ringOn($, 'back', false)
   if (step.kind === 'session') {
     await markSeen($, step.sessionId)
     await readRemote($, [step.sessionId]).catch(() => undefined)
@@ -967,6 +988,46 @@ async function goInto($: EngineInterface) {
   await readFeed($).catch(() => undefined)
 }
 
+// j and k: the cursor to the next or the previous row, over the rows alone;
+// it stays at the first and the last. From off the rows (the way back, a
+// key, a field) or with no row under it yet, j goes to the first row and k
+// to the last.
+async function moveBy($: EngineInterface, by: 1 | -1) {
+  const keys = runtime.toggles.map(one => one.key)
+  const at = runtime.isOffRows ? -1 : keys.indexOf((await read($, cursor)) ?? '')
+  const to = at < 0 ? (by > 0 ? keys[0] : keys.at(-1)) : keys[at + by]
+  if (to === undefined) {
+    return
+  }
+
+  // glimt's own move passes no ui.focus hook of glimt's: the cursor moves here.
+  await update($, cursor, () => to)
+  await ringOn($, to, true)
+}
+
+// A form closed under Claude Code's focus ring: the ring goes back to the
+// cursor's row, the way back inside an agent or a session, or this
+// session's row. Left on the form's own button, which goes with it, the
+// next key would reach nothing.
+async function ringBack($: EngineInterface) {
+  const to = landingOf({
+    hasForm: false,
+    hasKeyList: false,
+    cursor: await read($, cursor),
+    rows: runtime.toggles.map(one => one.key),
+    isInside: (await read($, opened)).length > 0,
+  })
+  await ringOn($, to?.key ?? 'toggle-self', to?.isRow ?? true)
+}
+
+// Puts Claude Code's focus ring on one of the pane's elements. glimt's own
+// move passes no ui.focus hook of glimt's, so it notes here whether the ring
+// is on a row, for j and k.
+async function ringOn($: EngineInterface, key: string, isRow: boolean) {
+  runtime.isOffRows = !isRow
+  await $.ui.focus({ requestId: PANE, key }).catch(() => undefined)
+}
+
 // h: one step back out, the cursor on the row it went in from.
 async function goBack($: EngineInterface) {
   const last = (await read($, opened)).at(-1)
@@ -975,7 +1036,7 @@ async function goBack($: EngineInterface) {
     await update($, feed, () => null)
     await update($, cursor, () => last.from ?? null)
     if (last.from !== undefined) {
-      await $.ui.focus({ requestId: PANE, key: last.from }).catch(() => undefined)
+      await ringOn($, last.from, true)
     }
     await readFeed($).catch(() => undefined)
   }
@@ -1556,7 +1617,7 @@ async function spawnAgent($: EngineInterface, task: string, where: 'here' | 'ses
 // n and r open a form at the top of the pane, its field taking the keyboard.
 async function openComposer($: EngineInterface, next: Composer) {
   await update($, composer, () => next)
-  await $.ui.focus({ requestId: PANE, key: 'composer-field' }).catch(() => undefined)
+  await ringOn($, 'composer-field', false)
 }
 
 // c asks before clearing this conversation; y runs Claude Code's own /clear,
@@ -1665,7 +1726,7 @@ async function stopAgent($: EngineInterface, id: string) {
 // rest work again at once. Enter on an empty field just leaves it.
 async function sendFromField($: EngineInterface, to: { sessionId: string } | { agentId: string }, name: string, text: string) {
   await sendMessage($, to, name, text)
-  await $.ui.focus({ requestId: PANE, key: 'back' }).catch(() => undefined)
+  await ringOn($, 'back', false)
 }
 
 // Sends the text to an agent or a session, as a message from this session.

@@ -4,6 +4,17 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-14
+
+### Changed
+
+- `j` and `k` move down and up the rows again, next to ↑ ↓ and Tab, and `q` closes the pane from the key row; inside a session, `j` and `k` walk its agents. From a key or the way back, `j` goes to the first row and `k` to the last.
+- `/glimt` no longer closes the pane. With the pane open, behind another tab or with the keyboard in the prompt box, it gives the pane the keyboard again, on the row you left, in a form you left open, or on the way back out of the key list; `q`, ctrl+x x or the pane's close mark closes it.
+
+### Fixed
+
+- Tab or Enter on a form's "tab cancel" left the keyboard on a button that went with the form, so the next key did nothing; the keyboard now goes back to the row.
+
 ## [0.8.0] - 2026-10-11
 
 ### Changed
@@ -143,7 +154,8 @@ Notable changes to glimt. The format follows [Keep a Changelog](https://keepacha
 - New agents here (`n`) or as a background session (`s`), rename (`r`), clear (`c`), attach (`a`) and stop (`x`).
 - The key list (`i`), a spinner on whatever is working with still marks for the rest, and a layout that keeps the sessions in place while agents come and go.
 
-[Unreleased]: https://github.com/mmedum/glimt/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/mmedum/glimt/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/mmedum/glimt/releases/tag/v0.9.0
 [0.8.0]: https://github.com/mmedum/glimt/releases/tag/v0.8.0
 [0.7.0]: https://github.com/mmedum/glimt/releases/tag/v0.7.0
 [0.6.3]: https://github.com/mmedum/glimt/releases/tag/v0.6.3
